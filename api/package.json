@@ -47,7 +47,6 @@
     "get-port": "^7.1.0",
     "http-proxy-middleware": "^3.0.3",
     "intercept-stdout": "^0.1.2",
-    "key-file-storage": "^2.3.3",
     "node-ble": "^1.11.0",
     "pem": "^1.14.8",
     "serialport": "^12.0.0",
