@@ -20,8 +20,6 @@
 <script lang="ts">
   import Card from './lib/Card.svelte'
   import { formatTemp, getCoordinates, getNodeName, getNodeNameById, hasAccess, displayFahrenheit, unixSecondsTimeAgo } from './lib/util'
-  import Microchip from './lib/icons/Microchip.svelte'
-  import { getHardwareModelName } from './lib/node-definitions'
   import axios from 'axios'
   import Modal from './lib/Modal.svelte'
   import { writable } from 'svelte/store'
@@ -372,10 +370,6 @@
                     /></svg
                   ></button
                 >
-              {/if}
-
-              {#if node.user?.hwModel != undefined}
-                <button class="h-7 w-5 fill-blue-500" title={getHardwareModelName(node.user?.hwModel)}><Microchip /></button>
               {/if}
 
               {#if node.position?.latitudeI}
