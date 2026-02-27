@@ -4,6 +4,7 @@
 
 // import { HttpConnection, BleConnection } from '@meshtastic/js'
 import { HttpConnection, BleConnection, Protobuf } from '../meshtastic-js/dist'
+import { fromBinary } from '@bufbuild/protobuf'
 import {
   Channel,
   MeshPacket,
@@ -172,6 +173,44 @@ function extractPayload(packet: MeshPacket): Record<string, any> {
   return { [packet[key]?.case]: packet[key]?.value }
 }
 
+function parsePayloadBytes(payload?: Uint8Array | Record<string, number>) {
+  if (!payload) return undefined
+  if (payload instanceof Uint8Array) return payload
+
+  return Uint8Array.from(
+    Object.entries(payload)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([, value]) => value)
+  )
+}
+
+const neighborInfoPortnum = Protobuf.Portnums?.PortNum?.NEIGHBORINFO_APP ?? 71
+let didWarnMissingNeighborInfoPortnum = false
+
+function processDecodedPortnumPacket(packet: Protobuf.Mesh.MeshPacket) {
+  const decodedData = packet.payloadVariant?.case == 'decoded' ? packet.payloadVariant.value : undefined
+  if (!decodedData?.portnum || decodedData.portnum != neighborInfoPortnum || packet.neighbors?.length) return
+
+  if (!didWarnMissingNeighborInfoPortnum && Protobuf.Portnums?.PortNum?.NEIGHBORINFO_APP === undefined) {
+    didWarnMissingNeighborInfoPortnum = true
+    console.log('[meshtastic] NEIGHBORINFO_APP portnum is missing from protobuf enums. meshtastic-js/protobufs may be outdated.')
+  }
+
+  try {
+    let payload = parsePayloadBytes(decodedData.payload as Uint8Array | Record<string, number>)
+    if (!payload?.length) return
+
+    const data = fromBinary(Protobuf.Mesh.NeighborInfoSchema, payload)
+    packets.upsert({ id: packet.id, neighbors: data.neighbors || [] })
+
+    for (let neighbor of data.neighbors || []) {
+      nodes.upsert({ num: neighbor.nodeId, snr: neighbor.snr, lastHeard: Date.now() / 1000 })
+    }
+  } catch (e) {
+    console.log('[meshtastic] Unable to decode NEIGHBORINFO_APP packet', String(e))
+  }
+}
+
 /** Disconnect from any existing connection */
 export async function disconnect(setIntent = true) {
   connectionStatus.set('disconnected')
@@ -288,6 +327,7 @@ export async function connect(address?: string) {
 
       let updatedNode = nodes.upsert(updates)
       packets.push(copy(e))
+      processDecodedPortnumPacket(e)
 
       // Check and send trace route if needed
       if (updates.hopsAway == 0) updates.trace = null
