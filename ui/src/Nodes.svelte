@@ -359,7 +359,7 @@
                   class="{node.hopsAway == 0 || node.trace?.route ? 'border bg-blue-600/30' : ''} px-0.5 rounded-md border-blue-600/80 {$pendingTraceroutes.includes(node.num)
                     ? 'hue-rotate-90 animate-pulse'
                     : ''}"
-                  title="Traceroute {node.hopsAway == 0 ? 'Direct' : ''}{node?.trace ? [$myNodeNum, ...node?.trace?.route, node?.num].map((id) => getNodeNameById(id)).join(' -> ') : ''}"
+                  title="Traceroute{node.hopsAway == 0 ? ' Direct ' : ''}{node?.trace ? [$myNodeNum, ...node?.trace?.route, node?.num].map((id) => getNodeNameById(id)).join(' -> ') : ''}"
                   on:click={() => axios.post('/traceRoute', { destination: node.num })}>↯</button
                 >
               {:else if $hasAccess}

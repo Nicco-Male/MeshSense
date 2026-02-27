@@ -372,7 +372,7 @@ export async function connect(address?: string) {
     let packet: MeshPacket
     packet = packets.upsert({ id: message.id, message })
     let node = getNodeById(packet.from)
-    if (packet?.viaMqtt === false) sendToMeshMap({ num: message.from }, node, packet)
+    if (packet?.viaMqtt === false && node.user) sendToMeshMap({ num: message.from }, node, packet)
   })
 
   /** TELEMETRY_APP */
@@ -381,7 +381,7 @@ export async function connect(address?: string) {
     let telemetry = extractPayload(data)
     let packet = packets.upsert({ id, data })
     let node = nodes.upsert({ num: e.from, ...telemetry })
-    if (packet?.viaMqtt === false) sendToMeshMap({ num: e.from, ...telemetry }, node, packet)
+    if (packet?.viaMqtt === false && node.user) sendToMeshMap({ num: e.from, ...telemetry }, node, packet)
   })
 
   /** POSITION_APP */
@@ -391,7 +391,7 @@ export async function connect(address?: string) {
     if (id && data.latitudeI) packet = packets.upsert({ id, data })
     if (e.from && data.latitudeI) {
       let node = nodes.upsert({ num: e.from, position: data })
-      if (packet?.viaMqtt === false) sendToMeshMap({ num: e.from, position: data }, node, packet)
+      if (packet?.viaMqtt === false && node.user) sendToMeshMap({ num: e.from, position: data }, node, packet)
     }
   })
 
