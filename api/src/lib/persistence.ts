@@ -5,6 +5,11 @@ import { State } from './state'
 
 const persistencePath = join(dataDirectory, 'state.json')
 
+type StoreFn = ((key: string, value?: unknown) => unknown) &
+  Record<string, unknown> & {
+    '/': string[]
+  }
+
 function loadState(): Record<string, unknown> {
   if (!existsSync(persistencePath)) return {}
 
@@ -23,7 +28,49 @@ function saveState() {
   writeFileSync(persistencePath, JSON.stringify(persistedState, null, 2), 'utf-8')
 }
 
-export let store = persistedState
+function createStore(): StoreFn {
+  const fn = (function (key: string, value?: unknown) {
+    if (arguments.length === 2) {
+      persistedState = { ...persistedState, [key]: value }
+      saveState()
+      return value
+    }
+
+    return persistedState[key]
+  }) as StoreFn
+
+  return new Proxy(fn, {
+    get(_target, prop: string | symbol) {
+      if (prop === '/') return Object.keys(persistedState)
+      if (typeof prop === 'string') return persistedState[prop]
+      return undefined
+    },
+    set(_target, prop: string | symbol, value: unknown) {
+      if (typeof prop === 'string') {
+        persistedState = { ...persistedState, [prop]: value }
+        saveState()
+      }
+      return true
+    },
+    ownKeys() {
+      return Reflect.ownKeys(persistedState)
+    },
+    getOwnPropertyDescriptor(_target, prop: string | symbol) {
+      if (typeof prop === 'string' && prop in persistedState) {
+        return {
+          configurable: true,
+          enumerable: true,
+          writable: true,
+          value: persistedState[prop],
+        }
+      }
+
+      return undefined
+    },
+  })
+}
+
+export const store = createStore()
 
 /** Return key-values as a `Record` object */
 export function getAllKeyValues(): Record<string, unknown> {
@@ -33,8 +80,6 @@ export function getAllKeyValues(): Record<string, unknown> {
 State.defaults = persistedState
 State.subscribe(({ state }) => {
   if (state.flags.persist == true || state.flags.persist == 'api') {
-    persistedState = { ...persistedState, [state.name]: state.value }
-    store = persistedState
-    saveState()
+    store(state.name, state.value)
   }
 })
