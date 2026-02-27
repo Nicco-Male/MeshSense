@@ -39,7 +39,7 @@ export type DeviceMetadata = {
   hasEthernet: boolean
   role: string
   positionFlags: number
-  hwModel: string
+  hwModel: string | number
   hasRemoteHardware: boolean
 }
 
@@ -61,7 +61,7 @@ export type User = {
   longName: string
   shortName: string
   macaddr: string
-  hwModel: string
+  hwModel: string | number
   isLicensed: boolean
   role: number
 }

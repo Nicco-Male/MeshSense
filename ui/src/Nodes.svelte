@@ -21,6 +21,7 @@
   import Card from './lib/Card.svelte'
   import { formatTemp, getCoordinates, getNodeName, getNodeNameById, hasAccess, displayFahrenheit, unixSecondsTimeAgo } from './lib/util'
   import Microchip from './lib/icons/Microchip.svelte'
+  import { getHardwareModelName, getNodeRoleDefinition } from './lib/node-definitions'
   import axios from 'axios'
   import Modal from './lib/Modal.svelte'
   import { writable } from 'svelte/store'
@@ -32,6 +33,8 @@
 
   export let includeMqtt = (localStorage.getItem('includeMqtt') ?? 'true') == 'true'
   let selectedNode: NodeInfo
+
+  const getRoleBadgeClass = (role?: number) => `${getNodeRoleDefinition(role)?.className ?? ''} rounded px-1 font-bold cursor-help`
   let nodeFilterInput: HTMLInputElement
   export let ol: OpenLayersMap = undefined
   export let filterText = writable('')
@@ -309,33 +312,7 @@
               >
 
               {#if node.user?.role != undefined}
-                {#if node.user.role === 0}
-                  <div title="Client Node" class="bg-blue-500/50 rounded px-1 font-bold cursor-help">C</div>
-                {:else if node.user.role === 1}
-                  <div title="Client_Mute Node" class="bg-indigo-500/50 text-indigo-300 rounded px-1 font-bold cursor-help">CM</div>
-                {:else if node.user.role === 2}
-                  <div title="Router Node" class="bg-red-500/50 text-red-200 rounded px-1 font-bold cursor-help">R</div>
-                {:else if node.user.role === 3}
-                  <div title="Deprecated Router_Client Node" class="bg-blue-500/50 rounded px-1 font-bold cursor-help">RC</div>
-                {:else if node.user.role === 4}
-                  <div title="Repeater Node" class="bg-red-500/50 text-red-200 rounded px-1 font-bold cursor-help">Re</div>
-                {:else if node.user.role === 5}
-                  <div title="Tracker Node" class="bg-indigo-500/50 text-indigo-300 rounded px-1 font-bold cursor-help">T</div>
-                {:else if node.user.role === 6}
-                  <div title="Sensor Node" class="bg-indigo-500/50 text-indigo-300 rounded px-1 font-bold cursor-help">S</div>
-                {:else if node.user.role === 7}
-                  <div title="TAK Node" class="bg-indigo-500/50 text-indigo-300 rounded px-1 font-bold cursor-help">TAK</div>
-                {:else if node.user.role === 8}
-                  <div title="Client Hidden Node" class="bg-indigo-500/50 text-indigo-300 rounded px-1 font-bold cursor-help">CH</div>
-                {:else if node.user.role === 9}
-                  <div title="Lost and Found Node" class="bg-indigo-500/50 text-indigo-300 rounded px-1 font-bold cursor-help">LF</div>
-                {:else if node.user.role === 10}
-                  <div title="TAK Tracker Node" class="bg-indigo-500/50 text-indigo-300 rounded px-1 font-bold cursor-help">TT</div>
-                {:else if node.user.role === 11}
-                  <div title="Router_Late Node" class="bg-red-500/50 text-red-200 rounded px-1 font-bold cursor-help">RL</div>
-                {:else if node.user.role === 12}
-                  <div title="Client Base" class="bg-blue-500/50 text-red-200 rounded px-1 font-bold cursor-help">CB</div>
-                {/if}
+                <div title={getNodeRoleDefinition(node.user.role)?.title} class={getRoleBadgeClass(node.user.role)}>{getNodeRoleDefinition(node.user.role)?.code}</div>
               {/if}
               {#if node.viaMqtt}
                 <div title="Node heard via MQTT" class="bg-rose-900/50 text-rose-200 rounded px-1 cursor-help text-xs">MQTT</div>
@@ -401,9 +378,9 @@
                 >
               {/if}
 
-              <!-- {#if node.user?.hwModel}
-              <button class="h-7 w-5 fill-blue-500" title={node.user?.hwModel}><Microchip /></button>
-            {/if} -->
+              {#if node.user?.hwModel != undefined}
+                <button class="h-7 w-5 fill-blue-500" title={getHardwareModelName(node.user?.hwModel)}><Microchip /></button>
+              {/if}
 
               {#if node.position?.latitudeI}
                 <button
