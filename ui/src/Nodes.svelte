@@ -20,8 +20,6 @@
 <script lang="ts">
   import Card from './lib/Card.svelte'
   import { formatTemp, getCoordinates, getNodeName, getNodeNameById, hasAccess, displayFahrenheit, unixSecondsTimeAgo } from './lib/util'
-  import Microchip from './lib/icons/Microchip.svelte'
-  import { getHardwareModelName, getNodeRoleDefinition } from './lib/node-definitions'
   import axios from 'axios'
   import Modal from './lib/Modal.svelte'
   import { writable } from 'svelte/store'
@@ -34,7 +32,6 @@
   export let includeMqtt = (localStorage.getItem('includeMqtt') ?? 'true') == 'true'
   let selectedNode: NodeInfo
 
-  const getRoleBadgeClass = (role?: number) => `${getNodeRoleDefinition(role)?.className ?? ''} rounded px-1 font-bold cursor-help`
   let nodeFilterInput: HTMLInputElement
   export let ol: OpenLayersMap = undefined
   export let filterText = writable('')
@@ -311,9 +308,6 @@
                 >{node.user?.longName || '!' + node.num?.toString(16)?.padStart(8, '0')}</button
               >
 
-              {#if node.user?.role != undefined}
-                <div title={getNodeRoleDefinition(node.user.role)?.title} class={getRoleBadgeClass(node.user.role)}>{getNodeRoleDefinition(node.user.role)?.code}</div>
-              {/if}
               {#if node.viaMqtt}
                 <div title="Node heard via MQTT" class="bg-rose-900/50 text-rose-200 rounded px-1 cursor-help text-xs">MQTT</div>
               {/if}
@@ -376,10 +370,6 @@
                     /></svg
                   ></button
                 >
-              {/if}
-
-              {#if node.user?.hwModel != undefined}
-                <button class="h-7 w-5 fill-blue-500" title={getHardwareModelName(node.user?.hwModel)}><Microchip /></button>
               {/if}
 
               {#if node.position?.latitudeI}
