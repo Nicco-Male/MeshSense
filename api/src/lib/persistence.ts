@@ -1,20 +1,40 @@
-import kfs from 'key-file-storage'
-import { State } from './state'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
 import { dataDirectory } from './paths'
-import { join } from 'path'
+import { State } from './state'
 
-export let store = kfs(join(dataDirectory, 'state'))
-// store.version = 0.1
+const persistencePath = join(dataDirectory, 'state.json')
 
-/** Return key-values as a `Record` object */
-export function getAllKeyValues(): Record<string, any> {
-  return store['/'].reduce((obj: Record<string, any>, key: string) => {
-    obj[key] = store[key]
-    return obj
-  }, {})
+function loadState(): Record<string, unknown> {
+  if (!existsSync(persistencePath)) return {}
+
+  try {
+    return JSON.parse(readFileSync(persistencePath, 'utf-8')) as Record<string, unknown>
+  } catch (error) {
+    console.warn(`Failed to parse persisted state at ${persistencePath}. Starting with an empty store.`, error)
+    return {}
+  }
 }
 
-State.defaults = store
-State.subscribe(({ state, action, args }) => {
-  if (state.flags.persist == true || state.flags.persist == 'api') store(state.name, state.value)
+let persistedState = loadState()
+
+function saveState() {
+  mkdirSync(dirname(persistencePath), { recursive: true })
+  writeFileSync(persistencePath, JSON.stringify(persistedState, null, 2), 'utf-8')
+}
+
+export let store = persistedState
+
+/** Return key-values as a `Record` object */
+export function getAllKeyValues(): Record<string, unknown> {
+  return { ...persistedState }
+}
+
+State.defaults = persistedState
+State.subscribe(({ state }) => {
+  if (state.flags.persist == true || state.flags.persist == 'api') {
+    persistedState = { ...persistedState, [state.name]: state.value }
+    store = persistedState
+    saveState()
+  }
 })
