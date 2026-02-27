@@ -4,7 +4,9 @@
   export let selectNodeFilterInput = writable(false)
   export let filteredNodes = writable<NodeInfo[]>([])
   export let inactiveNodes = writable<NodeInfo[]>([])
-  export let nodeVisibilityMode = writable<string>(localStorage.getItem('nodeVisibilityMode') ?? 'active')
+  const allowedVisibilityModes = new Set(['active', 'inactive', 'favorite', 'all'])
+  const savedVisibilityMode = localStorage.getItem('nodeVisibilityMode') ?? 'active'
+  export let nodeVisibilityMode = writable<string>(allowedVisibilityModes.has(savedVisibilityMode) ? savedVisibilityMode : 'active')
   export let sortField = writable<string>(localStorage.getItem('sortField') ?? 'lastHeard')
   export let sortDirection = writable<'asc' | 'desc'>((localStorage.getItem('sortDirection') as 'asc' | 'desc') ?? 'desc')
 
@@ -59,7 +61,7 @@
           case 'all':
             return true
           case 'favorite':
-            return node.isFavorite === true
+            return node.isFavorite === true || (node as any).isFavorite === 'true' || (node as any).isFavorite === 1
           case 'active':
           default:
             return node.num === $myNodeNum || !$inactiveNodes.some((inactive) => node.num === inactive.num)
