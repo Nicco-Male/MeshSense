@@ -22,6 +22,7 @@ export let allowRemoteMessaging = new State<boolean>('allowRemoteMessaging', fal
 export let autoConnectOnStartup = new State<boolean>('autoConnectOnStartup', true, { persist: true })
 export let enableTLS = new State<boolean>('enableTLS', false, { persist: true })
 export let automaticTraceroutes = new State<boolean>('automaticTraceroutes', true, { persist: true })
+export let automaticTraceroutesFavoritesOnly = new State<boolean>('automaticTraceroutesFavoritesOnly', false, { persist: true })
 export let meshSenseNewsDate = new State<number>('meshSenseNewsDate', 0, { persist: true })
 export let pendingTraceroutes = new State<number[]>('pendingTraceroutes', [], { hideLog: true })
 export let meshMapForwarding = new State<boolean>('meshMapForwarding', false, { hideLog: true, persist: true })

@@ -12,6 +12,7 @@ import {
   Position,
   address,
   automaticTraceroutes,
+  automaticTraceroutesFavoritesOnly,
   broadcastId,
   channels,
   connectionStatus,
@@ -89,6 +90,10 @@ function isTracerouteAvailable(nodeNum: number) {
   if (lastTracerouteRelativeTime > tracerouteRateLimit.value * 60000) return true
   console.log(`[meshtastic] Traceroute to ${nodeNum} already sent ${(lastTracerouteRelativeTime / 60000).toFixed(1)} minutes ago`)
   return false
+}
+
+function isFavoriteNode(node?: NodeInfo) {
+  return node?.isFavorite === true || (node as any)?.isFavorite === 'true' || (node as any)?.isFavorite === 1
 }
 
 function checkForCachedRoute(node: NodeInfo) {
@@ -331,7 +336,13 @@ export async function connect(address?: string) {
 
       // Check and send trace route if needed
       if (updates.hopsAway == 0) updates.trace = null
-      else if (automaticTraceroutes.value && updatedNode?.position?.latitudeI && updates.hopsAway && (!updatedNode.trace || originalNodeRecord?.hopsAway != updates.hopsAway)) {
+      else if (
+        automaticTraceroutes.value &&
+        updatedNode?.position?.latitudeI &&
+        updates.hopsAway &&
+        (!automaticTraceroutesFavoritesOnly.value || isFavoriteNode(updatedNode)) &&
+        (!updatedNode.trace || originalNodeRecord?.hopsAway != updates.hopsAway)
+      ) {
         if (isTracerouteAvailable(updates.num)) traceRoute(updates.num)
       }
     }

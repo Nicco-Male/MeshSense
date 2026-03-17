@@ -21,6 +21,7 @@
     allowRemoteMessaging,
     autoConnectOnStartup,
     automaticTraceroutes,
+    automaticTraceroutesFavoritesOnly,
     tracerouteRateLimit,
     nodeInactiveTimer,
     myNodeMetadata,
@@ -100,6 +101,11 @@
     <label class="flex gap-2">
       <input type="checkbox" bind:checked={$automaticTraceroutes} />
       <div class="font-bold">Automatically send Traceroute requests to active nodes when missing or when hops change</div>
+    </label>
+
+    <label class="flex gap-2">
+      <input type="checkbox" bind:checked={$automaticTraceroutesFavoritesOnly} />
+      <div class="font-bold">Only auto-traceroute favorite nodes</div>
     </label>
 
     <label>
