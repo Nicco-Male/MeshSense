@@ -63,7 +63,12 @@
   function getType(packet: MeshPacket) {
     if (packet.payloadVariant?.case == 'encrypted') return 'Encrypted'
     if (packet.message) return 'Message'
-    return (packet.data?.variant?.value?.$typeName ?? packet.data?.$typeName)?.replace('meshtastic.', '')
+    if (packet.neighbors?.length) return 'NeighborInfo'
+
+    const decodedPortnum = packet.payloadVariant?.case == 'decoded' ? packet.payloadVariant?.value?.portnum : undefined
+    if (decodedPortnum == 71) return 'NeighborInfo'
+
+    return (packet.data?.variant?.value?.$typeName ?? packet.data?.$typeName)?.replace('meshtastic.', '') ?? (decodedPortnum != undefined ? `Port ${decodedPortnum}` : '')
   }
 
   function showPin(packet: MeshPacket) {

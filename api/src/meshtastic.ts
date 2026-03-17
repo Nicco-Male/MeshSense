@@ -184,14 +184,14 @@ function parsePayloadBytes(payload?: Uint8Array | Record<string, number>) {
   )
 }
 
-const neighborInfoPortnum = Protobuf.Portnums?.PortNum?.NEIGHBORINFO_APP ?? 71
+const neighborInfoPortnum = Protobuf.Portnums?.PortNum?.NEIGHBORINFO_APP ?? Protobuf.Portnums?.PortNum?.NEIGHBOR_INFO_APP ?? 71
 let didWarnMissingNeighborInfoPortnum = false
 
 function processDecodedPortnumPacket(packet: Protobuf.Mesh.MeshPacket) {
   const decodedData = packet.payloadVariant?.case == 'decoded' ? packet.payloadVariant.value : undefined
   if (!decodedData?.portnum || decodedData.portnum != neighborInfoPortnum || packet.neighbors?.length) return
 
-  if (!didWarnMissingNeighborInfoPortnum && Protobuf.Portnums?.PortNum?.NEIGHBORINFO_APP === undefined) {
+  if (!didWarnMissingNeighborInfoPortnum && Protobuf.Portnums?.PortNum?.NEIGHBORINFO_APP === undefined && Protobuf.Portnums?.PortNum?.NEIGHBOR_INFO_APP === undefined) {
     didWarnMissingNeighborInfoPortnum = true
     console.log('[meshtastic] NEIGHBORINFO_APP portnum is missing from protobuf enums. meshtastic-js/protobufs may be outdated.')
   }
