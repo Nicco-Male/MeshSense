@@ -21,6 +21,7 @@
     allowRemoteMessaging,
     autoConnectOnStartup,
     automaticTraceroutes,
+    automaticTraceroutesMaxHops,
     automaticTraceroutesFavoritesOnly,
     tracerouteRateLimit,
     nodeInactiveTimer,
@@ -106,6 +107,21 @@
     <label class="flex gap-2">
       <input type="checkbox" bind:checked={$automaticTraceroutesFavoritesOnly} />
       <div class="font-bold">Only auto-traceroute favorite nodes</div>
+    </label>
+
+    <label>
+      <div class="font-bold">Max Hops for Auto Traceroute</div>
+      <input
+        class="input w-28"
+        type="number"
+        min={1}
+        on:change={(e) => {
+          let newValue = Math.max(Number(e.currentTarget.value), 1)
+          $automaticTraceroutesMaxHops = newValue
+          e.currentTarget.value = String(newValue)
+        }}
+        value={$automaticTraceroutesMaxHops}
+      />
     </label>
 
     <label>

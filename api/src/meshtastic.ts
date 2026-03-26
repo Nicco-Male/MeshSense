@@ -12,6 +12,7 @@ import {
   Position,
   address,
   automaticTraceroutes,
+  automaticTraceroutesMaxHops,
   automaticTraceroutesFavoritesOnly,
   broadcastId,
   channels,
@@ -340,6 +341,7 @@ export async function connect(address?: string) {
         automaticTraceroutes.value &&
         updatedNode?.position?.latitudeI &&
         updates.hopsAway &&
+        updates.hopsAway <= automaticTraceroutesMaxHops.value &&
         (!automaticTraceroutesFavoritesOnly.value || isFavoriteNode(updatedNode)) &&
         (!updatedNode.trace || originalNodeRecord?.hopsAway != updates.hopsAway)
       ) {
