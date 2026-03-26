@@ -102,7 +102,7 @@ export function formatTraceroutePaths(trace: TraceRouteData, sourceId?: number, 
   if (!trace) return []
   let forwardNodes = [sourceId, ...(trace.route || []), destinationId].filter((id) => id != undefined)
   const hasBackwardTrace = Array.isArray(trace.routeBack) || !!trace.snrBack?.length
-  let backwardNodes = hasBackwardTrace ? [sourceId, ...(trace.routeBack || []), destinationId].filter((id) => id != undefined) : undefined
+  let backwardNodes = hasBackwardTrace ? [destinationId, ...(trace.routeBack || []), sourceId].filter((id) => id != undefined) : undefined
   let paths = []
 
   if (forwardNodes.length) {
