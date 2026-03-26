@@ -101,7 +101,8 @@ function formatRouteSegment(route: number[] = []) {
 export function formatTraceroutePaths(trace: TraceRouteData, sourceId?: number, destinationId?: number) {
   if (!trace) return []
   let forwardNodes = [sourceId, ...(trace.route || []), destinationId].filter((id) => id != undefined)
-  let backwardNodes = trace.routeBack?.length ? [destinationId, ...trace.routeBack, sourceId].filter((id) => id != undefined) : undefined
+  const hasBackwardTrace = Array.isArray(trace.routeBack) || !!trace.snrBack?.length
+  let backwardNodes = hasBackwardTrace ? [destinationId, ...(trace.routeBack || []), sourceId].filter((id) => id != undefined) : undefined
   let paths = []
 
   if (forwardNodes.length) {
