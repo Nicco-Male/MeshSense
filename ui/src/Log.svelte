@@ -152,7 +152,7 @@
             </div>
           {:else if packet.data?.$typeName == 'meshtastic.RouteDiscovery'}
             <div class="bg-purple-800/60 rounded px-1 my-0.5 text-xs ring-0 text-white/80 mx-2 w-fit whitespace-normal">
-              {#each formatTraceroutePaths(packet?.data, packet.to, packet.from) as path}
+              {#each formatTraceroutePaths(packet?.data, packet.from, packet.to) as path}
                 <div>{path}</div>
               {/each}
             </div>
