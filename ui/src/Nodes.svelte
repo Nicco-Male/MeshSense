@@ -50,6 +50,15 @@
   $: localStorage.setItem('sortDirection', $sortDirection)
   $: $nodes.length, $nodeInactiveTimer, $nodeVisibilityMode, includeMqtt, $filterText, $sortField, $sortDirection, filterNodes()
 
+  function isFavorite(node: NodeInfo) {
+    return node.isFavorite === true || (node as any).isFavorite === 'true' || (node as any).isFavorite === 1
+  }
+
+  function toggleFavoriteNode(node: NodeInfo) {
+    let shouldBeFavorite = !isFavorite(node)
+    nodes.upsert({ num: node.num, isFavorite: shouldBeFavorite })
+  }
+
   function filterNodes() {
     $inactiveNodes = $nodes.filter(isInactive)
 
@@ -61,7 +70,7 @@
           case 'all':
             return true
           case 'favorite':
-            return node.isFavorite === true || (node as any).isFavorite === 'true' || (node as any).isFavorite === 1
+            return isFavorite(node)
           case 'active':
           default:
             return node.num === $myNodeNum || !$inactiveNodes.some((inactive) => node.num === inactive.num)
@@ -274,6 +283,7 @@
       {#each $filteredNodes as node (node.num)}
         <div
           class:ring-1={node.hopsAway == 0}
+          class:ring-amber-300={isFavorite(node)}
           class="bg-blue-300/10 rounded px-1 py-0.5 flex flex-col gap-0.5 {node.num == $myNodeNum
             ? 'bg-gradient-to-r '
             : Date.now() - node.lastHeard * 1000 < ($nodeInactiveTimer ?? 60) * 60 * 1000
@@ -300,6 +310,16 @@
                 <!-- Hops -->
                 <div title="{node.hopsAway} Hops Away" class="text-sm font-normal bg-black/20 rounded w-10 text-center">{node.num == $myNodeNum ? '-' : (node.hopsAway ?? '?')}</div>
               {/if}
+              {#if isFavorite(node)}
+                <div title="Favorite node" class="bg-amber-400/30 text-amber-100 rounded px-1 text-[10px] font-semibold">PREF</div>
+              {/if}
+              <button
+                class="text-xs"
+                title={isFavorite(node) ? 'Remove from favorites' : 'Add to favorites'}
+                on:click={() => toggleFavoriteNode(node)}
+              >
+                {isFavorite(node) ? '⭐' : '☆'}
+              </button>
             </div>
           {:else}
             <!-- Large Mode -->
@@ -319,11 +339,21 @@
               {#if node.viaMqtt}
                 <div title="Node heard via MQTT" class="bg-rose-900/50 text-rose-200 rounded px-1 cursor-help text-xs">MQTT</div>
               {/if}
+              {#if isFavorite(node)}
+                <div title="Favorite node" class="bg-amber-400/30 text-amber-100 rounded px-1 cursor-help text-xs font-semibold">PREFERITO</div>
+              {/if}
               <div class="grow"></div>
               {#if node.snr && node.hopsAway == 0}
                 <!-- display observed RF values -->
                 <ObservedRF {node} />
               {/if}
+              <button
+                class="text-xs"
+                title={isFavorite(node) ? 'Remove from favorites' : 'Add to favorites'}
+                on:click={() => toggleFavoriteNode(node)}
+              >
+                {isFavorite(node) ? '⭐' : '☆'}
+              </button>
             </div>
 
             <div class="flex gap-1.5 items-center">
