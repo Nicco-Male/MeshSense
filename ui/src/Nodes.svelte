@@ -76,12 +76,17 @@
     }
   }
 
-  function toggleFavoriteNode(node: NodeInfo) {
+  async function toggleFavoriteNode(node: NodeInfo) {
     let shouldBeFavorite = !isFavorite(node)
-    let currentFavorites = getConnectedNodeFavorites()
-    if (shouldBeFavorite) setConnectedNodeFavorites([...currentFavorites, node.num])
-    else setConnectedNodeFavorites(currentFavorites.filter((nodeNum) => nodeNum !== node.num))
-    nodes.upsert({ num: node.num, isFavorite: shouldBeFavorite })
+    try {
+      await axios.post('/setFavorite', { nodeNum: node.num, favorite: shouldBeFavorite })
+      let currentFavorites = getConnectedNodeFavorites()
+      if (shouldBeFavorite) setConnectedNodeFavorites([...currentFavorites, node.num])
+      else setConnectedNodeFavorites(currentFavorites.filter((nodeNum) => nodeNum !== node.num))
+      nodes.upsert({ num: node.num, isFavorite: shouldBeFavorite })
+    } catch (error) {
+      console.error('[favorite] Unable to sync favorite with node', error)
+    }
   }
 
   function filterNodes() {

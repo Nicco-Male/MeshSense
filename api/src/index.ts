@@ -10,6 +10,7 @@ import { createWriteStream } from 'fs'
 import { dataDirectory } from './lib/paths'
 import { join } from 'path'
 import axios from 'axios'
+import { spawn } from 'child_process'
 setInterval(() => currentTime.set(Date.now()), 15000)
 
 process.on('uncaughtException', (err, origin) => {
@@ -45,6 +46,20 @@ function isAuthorized(req: any) {
   )
 }
 
+function setFavoriteOnNode(nodeNum: number, favorite: boolean) {
+  return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
+    let destination = `!${Number(nodeNum).toString(16).padStart(8, '0')}`
+    let value = favorite ? '1' : '0'
+    let command = spawn('meshtastic', ['--dest', destination, '--set-favorite', value])
+    let stdout = ''
+    let stderr = ''
+    command.stdout.on('data', (data) => (stdout += String(data)))
+    command.stderr.on('data', (data) => (stderr += String(data)))
+    command.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }))
+    command.on('error', (error) => resolve({ code: 1, stdout, stderr: String(error) }))
+  })
+}
+
 createRoutes((app) => {
   app.post('/send', (req, res) => {
     if (!allowRemoteMessaging.value && !isAuthorized(req)) return res.sendStatus(403)
@@ -60,6 +75,24 @@ createRoutes((app) => {
     let destination = req.body.destination
     await traceRoute(destination)
     return res.sendStatus(200)
+  })
+
+  app.post('/setFavorite', async (req, res) => {
+    let nodeNum = Number(req.body.nodeNum)
+    let favorite = req.body.favorite === true || req.body.favorite === 'true' || req.body.favorite === 1
+    if (!Number.isFinite(nodeNum)) return res.status(400).json({ error: 'Invalid nodeNum' })
+
+    let result = await setFavoriteOnNode(nodeNum, favorite)
+    if (result.code !== 0) {
+      return res.status(500).json({
+        error: 'Unable to set favorite on node',
+        command: `meshtastic --dest !${nodeNum.toString(16).padStart(8, '0')} --set-favorite ${favorite ? '1' : '0'}`,
+        stderr: result.stderr,
+        stdout: result.stdout
+      })
+    }
+
+    return res.json({ ok: true, stdout: result.stdout, stderr: result.stderr })
   })
 
   app.post('/requestPosition', async (req, res) => {
