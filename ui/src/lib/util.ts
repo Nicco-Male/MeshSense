@@ -1,4 +1,4 @@
-import { accessKey, apiHostname, broadcastId, lastFromRadio, nodes, packets, type NodeInfo } from 'api/src/vars'
+import { accessKey, apiHostname, broadcastId, lastFromRadio, nodes, packets, type NodeInfo, type TraceRouteData } from 'api/src/vars'
 import { tick } from 'svelte'
 import { derived, get, writable } from 'svelte/store'
 import { enableAudioAlerts } from '../Settings.svelte'
@@ -92,6 +92,27 @@ export function getNodeNameById(id: number) {
 
 export function getNodeName(node: NodeInfo) {
   return node?.user?.shortName || node?.user?.id || '!' + node?.num?.toString(16)?.padStart(8, '0')
+}
+
+function formatRouteSegment(route: number[] = []) {
+  return route.map((id) => getNodeNameById(id)).join(' -> ')
+}
+
+export function formatTraceroutePaths(trace: TraceRouteData, sourceId?: number, destinationId?: number) {
+  if (!trace) return []
+  let forwardNodes = [sourceId, ...(trace.route || []), destinationId].filter((id) => id != undefined)
+  let backwardNodes = trace.routeBack?.length ? trace.routeBack : undefined
+  let paths = []
+
+  if (forwardNodes.length) {
+    paths.push(`➡ ${formatRouteSegment(forwardNodes)}`)
+  }
+
+  if (backwardNodes?.length) {
+    paths.push(`⬅ ${formatRouteSegment(backwardNodes)}`)
+  }
+
+  return paths
 }
 
 export function setPosition(latitude: number, longitude: number) {

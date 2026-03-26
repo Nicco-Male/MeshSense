@@ -122,8 +122,15 @@ export type NodeInfo = {
   deviceMetrics?: DeviceMetrics
   environmentMetrics?: EnvironmentMetrics
   rssi?: number
-  trace?: any
+  trace?: TraceRouteData
   approximatePosition?: { longitude: number; latitude: number } | false
+}
+
+export type TraceRouteData = {
+  route?: number[]
+  snrTowards?: number[]
+  routeBack?: number[]
+  snrBack?: number[]
 }
 
 export type ChannelSettings = {
@@ -180,9 +187,7 @@ export type MeshPacket = {
   position?: Position
   user?: User
   detectionSensor?: string
-  trace?: {
-    route: number[]
-  }
+  trace?: TraceRouteData
   routing?: {
     errorReason: string
   }
