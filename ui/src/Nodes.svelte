@@ -21,7 +21,7 @@
 
 <script lang="ts">
   import Card from './lib/Card.svelte'
-  import { formatTemp, getCoordinates, getNodeName, getNodeNameById, hasAccess, displayFahrenheit, unixSecondsTimeAgo } from './lib/util'
+  import { formatTemp, formatTraceroutePaths, getCoordinates, getNodeName, hasAccess, displayFahrenheit, unixSecondsTimeAgo } from './lib/util'
   import axios from 'axios'
   import Modal from './lib/Modal.svelte'
   import { writable } from 'svelte/store'
@@ -365,7 +365,7 @@
                   class="{node.hopsAway == 0 || node.trace?.route ? 'border bg-blue-600/30' : ''} px-0.5 rounded-md border-blue-600/80 {$pendingTraceroutes.includes(node.num)
                     ? 'hue-rotate-90 animate-pulse'
                     : ''}"
-                  title="Traceroute{node.hopsAway == 0 ? ' Direct ' : ''}{node?.trace ? [$myNodeNum, ...node?.trace?.route, node?.num].map((id) => getNodeNameById(id)).join(' -> ') : ''}"
+                  title="Traceroute{node.hopsAway == 0 ? ' Direct ' : ''}{node?.trace ? '\n' + formatTraceroutePaths(node.trace, $myNodeNum, node?.num).join('\n') : ''}"
                   on:click={() => axios.post('/traceRoute', { destination: node.num })}>↯</button
                 >
               {:else if $hasAccess}

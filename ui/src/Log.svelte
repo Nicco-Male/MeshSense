@@ -1,7 +1,7 @@
 <script lang="ts">
   import { broadcastId, channels, myNodeNum, nodes, packets, version, type MeshPacket } from 'api/src/vars'
   import Card from './lib/Card.svelte'
-  import { getNodeById, getNodeName, getNodeNameById, scrollToBottom, testPacket } from './lib/util'
+  import { formatTraceroutePaths, getNodeById, getNodeName, getNodeNameById, scrollToBottom, testPacket } from './lib/util'
   import Modal from './lib/Modal.svelte'
   import { messageDestination } from './Message.svelte'
   import OpenLayersMap from './lib/OpenLayersMap.svelte'
@@ -151,8 +151,10 @@
               {packet?.data?.variant?.value}
             </div>
           {:else if packet.data?.$typeName == 'meshtastic.RouteDiscovery'}
-            <div class="bg-purple-800/60 rounded px-1 my-0.5 text-xs ring-0 text-white/80 mx-2 w-fit">
-              {[packet.to, ...packet?.data?.route, packet.from].map((id) => getNodeNameById(id)).join(' -> ')}
+            <div class="bg-purple-800/60 rounded px-1 my-0.5 text-xs ring-0 text-white/80 mx-2 w-fit whitespace-normal">
+              {#each formatTraceroutePaths(packet?.data, packet.to, packet.from) as path}
+                <div>{path}</div>
+              {/each}
             </div>
           {:else if packet.neighbors?.length}
             <div class="bg-fuchsia-800/60 rounded px-1 my-0.5 text-xs ring-0 text-white/80 mx-2 w-fit">
