@@ -49,8 +49,7 @@ function isAuthorized(req: any) {
 function setFavoriteOnNode(nodeNum: number, favorite: boolean) {
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
     let destination = `!${Number(nodeNum).toString(16).padStart(8, '0')}`
-    let value = favorite ? '1' : '0'
-    let command = spawn('meshtastic', ['--dest', destination, '--set-favorite', value])
+    let command = favorite ? spawn('meshtastic', ['--set-favorite', destination]) : spawn('meshtastic', ['--remove-favorite', destination])
     let stdout = ''
     let stderr = ''
     command.stdout.on('data', (data) => (stdout += String(data)))
@@ -86,7 +85,9 @@ createRoutes((app) => {
     if (result.code !== 0) {
       return res.status(500).json({
         error: 'Unable to set favorite on node',
-        command: `meshtastic --dest !${nodeNum.toString(16).padStart(8, '0')} --set-favorite ${favorite ? '1' : '0'}`,
+        command: favorite
+          ? `meshtastic --set-favorite !${nodeNum.toString(16).padStart(8, '0')}`
+          : `meshtastic --remove-favorite !${nodeNum.toString(16).padStart(8, '0')}`,
         stderr: result.stderr,
         stdout: result.stdout
       })
