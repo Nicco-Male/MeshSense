@@ -1,5 +1,5 @@
 <script context="module" lang="ts">
-  import { currentTime, myNodeMetadata, myNodeNum, nodeInactiveTimer, nodes, pendingTraceroutes, type NodeInfo } from 'api/src/vars'
+  import { currentTime, favoriteNodesByMyNode, myNodeMetadata, myNodeNum, nodeInactiveTimer, nodes, pendingTraceroutes, type NodeInfo } from 'api/src/vars'
   export let smallMode = writable(false)
   export let selectNodeFilterInput = writable(false)
   export let filteredNodes = writable<NodeInfo[]>([])
@@ -48,14 +48,39 @@
   $: localStorage.setItem('includeMqtt', String(includeMqtt))
   $: localStorage.setItem('sortField', $sortField)
   $: localStorage.setItem('sortDirection', $sortDirection)
+  $: $favoriteNodesByMyNode, $myNodeNum, $nodes.length, syncFavoriteNodesFromConnectedNode()
   $: $nodes.length, $nodeInactiveTimer, $nodeVisibilityMode, includeMqtt, $filterText, $sortField, $sortDirection, filterNodes()
 
   function isFavorite(node: NodeInfo) {
     return node.isFavorite === true || (node as any).isFavorite === 'true' || (node as any).isFavorite === 1
   }
 
+  function getConnectedNodeFavorites() {
+    if (!$myNodeNum && $myNodeNum !== 0) return []
+    return ($favoriteNodesByMyNode?.[String($myNodeNum)] ?? []).map((value) => Number(value)).filter((value) => Number.isFinite(value))
+  }
+
+  function setConnectedNodeFavorites(favorites: number[]) {
+    if (!$myNodeNum && $myNodeNum !== 0) return
+    $favoriteNodesByMyNode = {
+      ...$favoriteNodesByMyNode,
+      [String($myNodeNum)]: Array.from(new Set(favorites.map((value) => Number(value)).filter((value) => Number.isFinite(value))))
+    }
+  }
+
+  function syncFavoriteNodesFromConnectedNode() {
+    let favorites = getConnectedNodeFavorites()
+    for (let node of $nodes) {
+      let shouldBeFavorite = favorites.includes(node.num)
+      if (isFavorite(node) !== shouldBeFavorite) nodes.upsert({ num: node.num, isFavorite: shouldBeFavorite })
+    }
+  }
+
   function toggleFavoriteNode(node: NodeInfo) {
     let shouldBeFavorite = !isFavorite(node)
+    let currentFavorites = getConnectedNodeFavorites()
+    if (shouldBeFavorite) setConnectedNodeFavorites([...currentFavorites, node.num])
+    else setConnectedNodeFavorites(currentFavorites.filter((nodeNum) => nodeNum !== node.num))
     nodes.upsert({ num: node.num, isFavorite: shouldBeFavorite })
   }
 
@@ -310,9 +335,6 @@
                 <!-- Hops -->
                 <div title="{node.hopsAway} Hops Away" class="text-sm font-normal bg-black/20 rounded w-10 text-center">{node.num == $myNodeNum ? '-' : (node.hopsAway ?? '?')}</div>
               {/if}
-              {#if isFavorite(node)}
-                <div title="Favorite node" class="bg-amber-400/30 text-amber-100 rounded px-1 text-[10px] font-semibold">PREF</div>
-              {/if}
               <button
                 class="text-xs"
                 title={isFavorite(node) ? 'Remove from favorites' : 'Add to favorites'}
@@ -338,9 +360,6 @@
 
               {#if node.viaMqtt}
                 <div title="Node heard via MQTT" class="bg-rose-900/50 text-rose-200 rounded px-1 cursor-help text-xs">MQTT</div>
-              {/if}
-              {#if isFavorite(node)}
-                <div title="Favorite node" class="bg-amber-400/30 text-amber-100 rounded px-1 cursor-help text-xs font-semibold">PREFERITO</div>
               {/if}
               <div class="grow"></div>
               {#if node.snr && node.hopsAway == 0}
