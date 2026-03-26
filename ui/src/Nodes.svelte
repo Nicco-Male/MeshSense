@@ -1,5 +1,5 @@
 <script context="module" lang="ts">
-  import { currentTime, myNodeMetadata, myNodeNum, nodeInactiveTimer, nodes, pendingTraceroutes, type NodeInfo } from 'api/src/vars'
+  import { currentTime, favoriteNodesByMyNode, myNodeMetadata, myNodeNum, nodeInactiveTimer, nodes, pendingTraceroutes, type NodeInfo } from 'api/src/vars'
   export let smallMode = writable(false)
   export let selectNodeFilterInput = writable(false)
   export let filteredNodes = writable<NodeInfo[]>([])
@@ -48,7 +48,46 @@
   $: localStorage.setItem('includeMqtt', String(includeMqtt))
   $: localStorage.setItem('sortField', $sortField)
   $: localStorage.setItem('sortDirection', $sortDirection)
+  $: $favoriteNodesByMyNode, $myNodeNum, $nodes.length, syncFavoriteNodesFromConnectedNode()
   $: $nodes.length, $nodeInactiveTimer, $nodeVisibilityMode, includeMqtt, $filterText, $sortField, $sortDirection, filterNodes()
+
+  function isFavorite(node: NodeInfo) {
+    return node.isFavorite === true || (node as any).isFavorite === 'true' || (node as any).isFavorite === 1
+  }
+
+  function getConnectedNodeFavorites() {
+    if (!$myNodeNum && $myNodeNum !== 0) return []
+    return ($favoriteNodesByMyNode?.[String($myNodeNum)] ?? []).map((value) => Number(value)).filter((value) => Number.isFinite(value))
+  }
+
+  function setConnectedNodeFavorites(favorites: number[]) {
+    if (!$myNodeNum && $myNodeNum !== 0) return
+    $favoriteNodesByMyNode = {
+      ...$favoriteNodesByMyNode,
+      [String($myNodeNum)]: Array.from(new Set(favorites.map((value) => Number(value)).filter((value) => Number.isFinite(value))))
+    }
+  }
+
+  function syncFavoriteNodesFromConnectedNode() {
+    let favorites = getConnectedNodeFavorites()
+    for (let node of $nodes) {
+      let shouldBeFavorite = favorites.includes(node.num)
+      if (isFavorite(node) !== shouldBeFavorite) nodes.upsert({ num: node.num, isFavorite: shouldBeFavorite })
+    }
+  }
+
+  async function toggleFavoriteNode(node: NodeInfo) {
+    let shouldBeFavorite = !isFavorite(node)
+    try {
+      await axios.post('/setFavorite', { nodeNum: node.num, favorite: shouldBeFavorite })
+      let currentFavorites = getConnectedNodeFavorites()
+      if (shouldBeFavorite) setConnectedNodeFavorites([...currentFavorites, node.num])
+      else setConnectedNodeFavorites(currentFavorites.filter((nodeNum) => nodeNum !== node.num))
+      nodes.upsert({ num: node.num, isFavorite: shouldBeFavorite })
+    } catch (error) {
+      console.error('[favorite] Unable to sync favorite with node', error)
+    }
+  }
 
   function filterNodes() {
     $inactiveNodes = $nodes.filter(isInactive)
@@ -61,7 +100,7 @@
           case 'all':
             return true
           case 'favorite':
-            return node.isFavorite === true || (node as any).isFavorite === 'true' || (node as any).isFavorite === 1
+            return isFavorite(node)
           case 'active':
           default:
             return node.num === $myNodeNum || !$inactiveNodes.some((inactive) => node.num === inactive.num)
@@ -274,6 +313,7 @@
       {#each $filteredNodes as node (node.num)}
         <div
           class:ring-1={node.hopsAway == 0}
+          class:ring-amber-300={isFavorite(node)}
           class="bg-blue-300/10 rounded px-1 py-0.5 flex flex-col gap-0.5 {node.num == $myNodeNum
             ? 'bg-gradient-to-r '
             : Date.now() - node.lastHeard * 1000 < ($nodeInactiveTimer ?? 60) * 60 * 1000
@@ -300,6 +340,13 @@
                 <!-- Hops -->
                 <div title="{node.hopsAway} Hops Away" class="text-sm font-normal bg-black/20 rounded w-10 text-center">{node.num == $myNodeNum ? '-' : (node.hopsAway ?? '?')}</div>
               {/if}
+              <button
+                class="text-xs"
+                title={isFavorite(node) ? 'Remove from favorites' : 'Add to favorites'}
+                on:click={() => toggleFavoriteNode(node)}
+              >
+                {isFavorite(node) ? '⭐' : '☆'}
+              </button>
             </div>
           {:else}
             <!-- Large Mode -->
@@ -324,6 +371,13 @@
                 <!-- display observed RF values -->
                 <ObservedRF {node} />
               {/if}
+              <button
+                class="text-xs"
+                title={isFavorite(node) ? 'Remove from favorites' : 'Add to favorites'}
+                on:click={() => toggleFavoriteNode(node)}
+              >
+                {isFavorite(node) ? '⭐' : '☆'}
+              </button>
             </div>
 
             <div class="flex gap-1.5 items-center">
