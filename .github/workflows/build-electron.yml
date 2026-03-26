@@ -19,12 +19,12 @@ jobs:
           git config --global core.autocrlf false
           git config --global core.eol lf
 
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Use Node.js
-        uses: actions/setup-node@v4.4.0
+        uses: actions/setup-node@v5
         with:
           node-version: 22.x
 
@@ -85,7 +85,7 @@ jobs:
         run: npm run build:${{ steps.set_arch.outputs.arch }}
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: electron-build-${{ matrix.os }}
           path: electron/dist/
