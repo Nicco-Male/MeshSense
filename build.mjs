@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'child_process'
-import { styleText } from 'util';
+const styleText = (_style, text) => text;
 import './api/node_modules/dotenv/config.js'
 
 let runCmd = (commandString) => new Promise((resolve, reject) => {
