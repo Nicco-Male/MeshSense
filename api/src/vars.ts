@@ -7,6 +7,12 @@ export let connectionStatus = new State<'connected' | 'connecting' | 'disconnect
 export let lastFromRadio = new State('lastFromRadio', undefined, { hideLog: true })
 export let channels = new State<Channel[]>('channels', [], { primaryKey: 'index', hideLog: true })
 export let packets = new State<MeshPacket[]>('packets', [], { hideLog: true })
+export let messageHistory = new State<MeshPacket[]>('messageHistory', [], { persist: true, primaryKey: 'id', hideLog: true })
+
+// Keep message history capped at 200
+messageHistory.subscribe(() => {
+  while (messageHistory.value?.length > 200) messageHistory.shift()
+})
 export let nodes = new State<NodeInfo[]>('nodes', [], { primaryKey: 'num', hideLog: true })
 export let currentTime = new State<number>('currentTime', Date.now(), { hideLog: true })
 export let myNodeNum = new State<number>('myNodeNum')

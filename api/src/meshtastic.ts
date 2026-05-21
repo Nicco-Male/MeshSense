@@ -5,6 +5,8 @@
 // import { HttpConnection, BleConnection } from '@meshtastic/js'
 import { HttpConnection, BleConnection, Protobuf } from '../meshtastic-js/dist'
 import { fromBinary } from '@bufbuild/protobuf'
+import { NodeSerialConnection } from './lib/serialConnection'
+import { isSerialPath, listSerialPorts } from './lib/serial'
 import {
   Channel,
   MeshPacket,
@@ -20,6 +22,7 @@ import {
   enableTLS,
   lastFromRadio,
   meshMapForwarding,
+  messageHistory,
   messagePrefix,
   messageSuffix,
   myNodeMetadata,
@@ -39,7 +42,7 @@ import { State } from './lib/state'
 
 let routeCache: State<Record<number, number[]>>
 
-let connection: HttpConnection | BleConnection
+let connection: HttpConnection | BleConnection | NodeSerialConnection
 let connectionIntended = false
 // address.subscribe(connect)
 
@@ -266,6 +269,9 @@ export async function connect(address?: string) {
     /** If device never showed up, bail */
     if (!bluetoothDevices[address]) return
     stopScanning()
+  } else if (isSerialPath(address)) {
+    /** Serial Device */
+    connection = new NodeSerialConnection()
   } else {
     /** HTTP Endpoint */
     connection = new HttpConnection()
@@ -274,6 +280,11 @@ export async function connect(address?: string) {
   connectionStatus.set('connecting')
   channels.set([])
   updateTimeout()
+
+  // Load persisted message history into packets
+  if (messageHistory.value?.length) {
+    for (let msg of messageHistory.value) packets.upsert(msg)
+  }
 
   //   DeviceRestarting = 1,
   //   DeviceDisconnected = 2,
@@ -379,11 +390,13 @@ export async function connect(address?: string) {
   })
 
   /** TEXT_MESSAGE_APP */
+  /** TEXT_MESSAGE_APP */
   connection.events.onMessagePacket.subscribe((e) => {
     let message = copy(e)
     message.show = true
     let packet: MeshPacket
     packet = packets.upsert({ id: message.id, message })
+    messageHistory.upsert(packet)
     let node = getNodeById(packet.from)
     if (packet?.viaMqtt === false && node.user) sendToMeshMap({ num: message.from }, node, packet)
   })
@@ -534,10 +547,12 @@ export async function connect(address?: string) {
   })
 
   // Attempt to connect to the specified MeshTastic Node
-  console.log('[meshtastic] Connecting to Node', address, connection instanceof BleConnection ? 'via Bluetooth' : 'via IP')
+  console.log('[meshtastic] Connecting to Node', address, connection instanceof BleConnection ? 'via Bluetooth' : connection instanceof NodeSerialConnection ? 'via Serial' : 'via IP')
   if (connection instanceof BleConnection) {
     // console.log(bluetoothDevices[address])
     await connection.connect({ device: bluetoothDevices[address] })
+  } else if (connection instanceof NodeSerialConnection) {
+    await connection.connect({ path: address })
   } else {
     process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
     await connection.connect({ address, fetchInterval: 2000, tls: enableTLS.value })

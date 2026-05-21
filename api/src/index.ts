@@ -3,6 +3,7 @@ import './lib/persistence'
 import { app, createRoutes, finalize, server } from './lib/server'
 import './meshtastic'
 import { connect, disconnect, deleteNodes, requestPosition, send, traceRoute, setPosition, deviceConfig } from './meshtastic'
+import { listSerialPorts } from './lib/serial'
 import { address, apiPort, currentTime, apiHostname, accessKey, autoConnectOnStartup, meshSenseNewsDate, allowRemoteMessaging } from './vars'
 import { hostname } from 'os'
 import intercept from 'intercept-stdout'
@@ -98,6 +99,11 @@ createRoutes((app) => {
     return res.json(deviceConfig)
   })
 
+  app.get('/serialPorts', async (req, res) => {
+    let ports = await listSerialPorts()
+    return res.json(ports)
+  })
+
   app.post('/position', async (req, res) => {
     if (!isAuthorized(req)) return res.sendStatus(403)
     console.log('[express]', '/position', req.body)
@@ -134,6 +140,9 @@ createRoutes((app) => {
   }
 
   checkForNews()
+
+  // Scan for serial ports
+  listSerialPorts()
 
   if ((process.env.ADDRESS || autoConnectOnStartup.value) && address.value) connect(address.value)
 })
