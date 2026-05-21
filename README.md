@@ -4,7 +4,49 @@
 
 ![](https://affirmatech.com/meshsense.png)
 
-MeshSense directly connects to your Meshtastic node via Bluetooth or WiFi and continuously provides all the information you need to assess the health of your network. For more detailed information, take a peek at our [Frequently Asked Questions](https://affirmatech.com/meshsense/faq) or [Bluetooth Tips](https://affirmatech.com/meshsense/bluetooth).
+MeshSense directly connects to your Meshtastic node via Bluetooth, WiFi, or Serial/USB and continuously provides all the information you need to assess the health of your network. For more detailed information, take a peek at our [Frequently Asked Questions](https://affirmatech.com/meshsense/faq) or [Bluetooth Tips](https://affirmatech.com/meshsense/bluetooth).
+
+## Docker
+
+A pre-built Docker image is available on GitHub Container Registry:
+
+```sh
+docker pull ghcr.io/outrun207/meshsense:latest
+```
+
+### Running the container
+
+```sh
+docker run -d --name meshsense \
+  --privileged \
+  --network host \
+  -v /var/run/dbus:/var/run/dbus \
+  -v meshsense-data:/root/.local/share/meshsense \
+  -e ACCESS_KEY=yourSecretKey \
+  -e ADDRESS=/dev/ttyACM0 \
+  --restart unless-stopped \
+  ghcr.io/outrun207/meshsense:latest
+```
+
+- `ADDRESS` — Set to a serial port path (e.g. `/dev/ttyACM0`) or IP address for auto-connect on startup
+- `ACCESS_KEY` — Required for remote (non-localhost) access to send messages and manage the device
+- `--privileged` — Required for Bluetooth and serial port access
+- `--network host` — Required for mDNS and WebSocket connectivity
+
+The web UI will be available at `http://<host-ip>:5920`.
+
+### Building the Docker image locally
+
+```sh
+# Build the UI and API
+cd ui && npm install && npm run build && cd ..
+cd api && npm install && npm run build && cd ..
+
+# Build the Docker image (run on target platform or use buildx)
+docker build -t meshsense .
+```
+
+**Note:** The `serialport` native bindings and `simpleble.node` must match the target platform architecture. When building on ARM64 (e.g. Raspberry Pi), the correct bindings will be installed automatically.
 
 ## Headless Usage
 

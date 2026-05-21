@@ -15,7 +15,7 @@
         class="btn w-32 min-h-8 text-sm
         {channelIndex == selectedChannelIndex ? 'outline outline-1 outline-blue-500' : '-hue-rotate-60 saturate-50'}
         {channel.role == 0 ? '!saturate-0' : ''}"
-        on:click={() => (selectedChannelIndex = channelIndex)}>{channelIndex} {channel.settings?.name ? `- ${channel?.settings.name}` : ''}</button
+        on:click={() => (selectedChannelIndex = channelIndex)}>{channel.settings?.name || (channel.role == 1 ? 'Primary' : `Channel ${channelIndex}`)}</button
       >
     {/each}
   </div>
