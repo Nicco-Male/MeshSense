@@ -27,6 +27,7 @@
   import { writable } from 'svelte/store'
   import OpenLayersMap from './lib/OpenLayersMap.svelte'
   import { messageDestination } from './Message.svelte'
+  import { getNodeRoleDefinition } from './lib/node-definitions'
   import { getSvgUri, setPositionMode } from './Map.svelte'
   import ChannelUtilization from './lib/ChannelUtilization.svelte'
   import ObservedRF from './lib/ObservedRF.svelte'
@@ -315,6 +316,11 @@
               <button title={node.user?.longName || '!' + node.num?.toString(16)?.padStart(8, '0')} class="text-left truncate max-w-44" on:click={() => ($messageDestination = node.num)}
                 >{node.user?.longName || '!' + node.num?.toString(16)?.padStart(8, '0')}</button
               >
+
+              {#if node.user?.role != undefined}
+                {@const roleDefinition = getNodeRoleDefinition(node.user.role)}
+                <div title={roleDefinition.title} class={`rounded px-1 cursor-help text-xs font-semibold ${roleDefinition.className}`}>{roleDefinition.code}</div>
+              {/if}
 
               {#if node.viaMqtt}
                 <div title="Node heard via MQTT" class="bg-rose-900/50 text-rose-200 rounded px-1 cursor-help text-xs">MQTT</div>
