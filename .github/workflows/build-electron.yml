@@ -3,16 +3,30 @@ name: Electron App
 on:
   push:
     branches: [master]
+    tags:
+      - "v*"
   pull_request:
     branches: [master]
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025]
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          - runner: windows-2025
+            platform: win
+            arch: x64
+          - runner: macos-15
+            platform: mac
+            arch: arm64
     steps:
       - name: Force LF line endings
         run: |
@@ -60,32 +74,39 @@ jobs:
 
       - name: Build UI
         working-directory: ui
-        run: |
-          npm run build
+        run: npm run build
 
       - name: Build API
         working-directory: api
-        run: |
-          npm run build
-
-      - name: Set build arch
-        id: set_arch
-        shell: bash
-        run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            echo "arch=win" >> $GITHUB_OUTPUT
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            echo "arch=mac" >> $GITHUB_OUTPUT
-          else
-            echo "arch=linux" >> $GITHUB_OUTPUT
-          fi
+        run: npm run build
 
       - name: Build Electron app
         working-directory: electron
-        run: npm run build:${{ steps.set_arch.outputs.arch }}
+        shell: bash
+        run: npm run build:${{ matrix.platform }} -- --${{ matrix.arch }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: electron-build-${{ matrix.os }}
+          name: electron-build-${{ matrix.platform }}-${{ matrix.arch }}
           path: electron/dist/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v6
+        with:
+          pattern: electron-build-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**
+          generate_release_notes: true
