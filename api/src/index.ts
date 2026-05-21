@@ -1,3 +1,8 @@
+import { webcrypto as nodeWebcrypto } from "node:crypto";
+if (!(globalThis as any).crypto) {
+  (globalThis as any).crypto = nodeWebcrypto;
+}
+
 import 'dotenv/config'
 import './lib/persistence'
 import { app, createRoutes, finalize, server } from './lib/server'

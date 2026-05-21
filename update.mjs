@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'child_process'
 import { argv } from 'process';
-import { styleText } from 'util';
-
+const styleText = (_style, text) => text;
 let runCmd = (commandString) => new Promise((resolve, reject) => {
   let cmd = spawn(commandString, { shell: true, env: process.env })
   let stdoutData = '';
