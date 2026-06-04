@@ -1,4 +1,4 @@
-import { accessKey, apiHostname, broadcastId, lastFromRadio, nodes, packets, type NodeInfo, type TraceRouteData } from 'api/src/vars'
+import { accessKey, apiHostname, broadcastId, lastFromRadio, nodes, packets, type MeshPacket, type NodeInfo, type TraceRouteData } from 'api/src/vars'
 import { tick } from 'svelte'
 import { derived, get, writable } from 'svelte/store'
 import { enableAudioAlerts } from '../Settings.svelte'
@@ -114,6 +114,21 @@ export function formatTraceroutePaths(trace: TraceRouteData, sourceId?: number, 
   }
 
   return paths
+}
+
+export function getPacketHopText(packet: Pick<MeshPacket, 'hopStart' | 'hopLimit'>) {
+  const hopStart = Number(packet?.hopStart)
+  const hopLimit = Number(packet?.hopLimit)
+  if (!Number.isFinite(hopStart) || !Number.isFinite(hopLimit) || hopStart <= 0) return ''
+
+  const traveled = Math.max(0, hopStart - hopLimit)
+  return `${traveled} / ${hopStart}`
+}
+
+export function getPacketHopTitle(packet: Pick<MeshPacket, 'hopStart' | 'hopLimit'>) {
+  const hopText = getPacketHopText(packet)
+  if (!hopText) return 'No hop_start data available for this packet'
+  return `Meshtastic hop count: hop_start - hop_limit = ${packet.hopStart} - ${packet.hopLimit}. Displayed as traveled / hop_start.`
 }
 
 export function setPosition(latitude: number, longitude: number) {
