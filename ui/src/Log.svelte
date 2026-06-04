@@ -1,7 +1,7 @@
 <script lang="ts">
   import { broadcastId, channels, myNodeNum, nodes, packets, version, type MeshPacket } from 'api/src/vars'
   import Card from './lib/Card.svelte'
-  import { formatTraceroutePaths, getNodeById, getNodeName, getNodeNameById, scrollToBottom, testPacket } from './lib/util'
+  import { formatTraceroutePaths, getNodeById, getNodeName, getNodeNameById, getPacketHopText, getPacketHopTitle, scrollToBottom, testPacket } from './lib/util'
   import Modal from './lib/Modal.svelte'
   import { messageDestination } from './Message.svelte'
   import OpenLayersMap from './lib/OpenLayersMap.svelte'
@@ -100,7 +100,7 @@
     <div class="w-10">SNR</div>
     <div class="w-10">RSSI</div>
     <div class="w-36">Type</div>
-    <div class="w-10">Hops</div>
+    <div class="w-10" title="Meshtastic: traveled hops / hop_start. Traveled hops are calculated as hop_start - hop_limit.">Hops</div>
     <div class="w-52"></div>
   </h2>
   <div bind:this={packetsDiv} class="p-1 px-2 text-sm overflow-auto grid h-full content-start overflow-x-hidden">
@@ -125,9 +125,7 @@
           <div class="w-10">{packet.hopStart == packet.hopLimit ? packet.rxRssi || '' : ''}</div>
           <div class="w-36">{getType(packet)}</div>
 
-          <div class="w-10">
-            {#if packet.hopStart}{packet.hopStart - packet.hopLimit} / {packet.hopStart}{/if}
-          </div>
+          <div class="w-10" title={getPacketHopTitle(packet)}>{getPacketHopText(packet)}</div>
           <div class="w-8">
             <button on:click={() => (selectedPacket = packet)}>🔍</button>
             {#if packet.data?.$typeName == 'meshtastic.Position'}
