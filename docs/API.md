@@ -68,7 +68,8 @@ Returns known nodes normalized as:
     "id": "!1234abcd",
     "longName": "Long Name",
     "shortName": "LN",
-    "lastHeard": 1780920000,
+    "lastHeard": "2026-06-08T12:00:00.000Z",
+    "lastHeardSec": 1780920000,
     "snr": 8.5,
     "rssi": -87,
     "latitude": 45.1234567,
@@ -92,14 +93,19 @@ Returns recently received packets normalized as:
 [
   {
     "id": 123,
-    "rxTime": 1780920000,
+    "rxTime": "2026-06-08T12:00:00.000Z",
+    "rxTimeSec": 1780920000,
     "from": 305441741,
+    "fromId": "!1234abcd",
     "to": 4294967295,
+    "toId": "^all",
     "channel": 0,
     "portnum": 1,
+    "app": "TEXT_MESSAGE_APP",
     "type": "text",
     "rssi": -87,
     "snr": 8.5,
+    "hasRadioMetrics": true,
     "hopLimit": 3,
     "hopStart": 5,
     "hopsUsed": 2,
@@ -107,6 +113,16 @@ Returns recently received packets normalized as:
   }
 ]
 ```
+
+
+
+Notes:
+
+- `rxTime` is always an ISO timestamp when available; `rxTimeSec` preserves the original Unix timestamp in seconds.
+- `fromId` is the `!xxxxxxxx` form of `from`; `toId` is `!xxxxxxxx`, or `^all` for broadcast destination `4294967295`.
+- `hopsUsed` is only calculated when `hopStart > 0`, `hopLimit >= 0`, and `hopStart >= hopLimit`; otherwise it is `null`.
+- If both `rxRssi` and `rxSnr` are zero, `rssi` and `snr` are `null` and `hasRadioMetrics` is `false`.
+- Minimum app/type mapping: `1 => TEXT_MESSAGE_APP/text`, `3 => POSITION_APP/position`, `5 => ROUTING_APP/routing`, `67 => TELEMETRY_APP/telemetry`, `70 => TRACEROUTE_APP/traceroute`, otherwise `UNKNOWN_APP/decoded` or `UNKNOWN_APP/unknown`.
 
 Supported query parameters:
 
@@ -179,14 +195,19 @@ Broadcast when a Meshtastic packet arrives:
   "type": "packet_rx",
   "data": {
     "id": 123,
-    "rxTime": 1780920000,
+    "rxTime": "2026-06-08T12:00:00.000Z",
+    "rxTimeSec": 1780920000,
     "from": 305441741,
+    "fromId": "!1234abcd",
     "to": 4294967295,
+    "toId": "^all",
     "channel": 0,
     "portnum": 1,
+    "app": "TEXT_MESSAGE_APP",
     "type": "text",
     "rssi": -87,
     "snr": 8.5,
+    "hasRadioMetrics": true,
     "hopLimit": 3,
     "hopStart": 5,
     "hopsUsed": 2,
@@ -207,7 +228,8 @@ Broadcast when a node is updated:
     "id": "!1234abcd",
     "longName": "Long Name",
     "shortName": "LN",
-    "lastHeard": 1780920000,
+    "lastHeard": "2026-06-08T12:00:00.000Z",
+    "lastHeardSec": 1780920000,
     "snr": 8.5,
     "rssi": -87,
     "latitude": 45.1234567,
@@ -226,12 +248,17 @@ Broadcast when a text message arrives:
   "type": "message_rx",
   "data": {
     "id": 123,
-    "rxTime": 1780920000,
+    "rxTime": "2026-06-08T12:00:00.000Z",
+    "rxTimeSec": 1780920000,
     "from": 305441741,
+    "fromId": "!1234abcd",
     "to": 4294967295,
+    "toId": "^all",
     "channel": 0,
     "text": "hello mesh",
     "portnum": 1,
+    "app": "TEXT_MESSAGE_APP",
+    "type": "text",
     "packet": {},
     "raw": {}
   }

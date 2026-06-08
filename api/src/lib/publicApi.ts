@@ -10,9 +10,10 @@ export type NormalizedNode = {
   id?: string
   longName?: string
   shortName?: string
-  lastHeard?: number | string
-  snr?: number
-  rssi?: number
+  lastHeard?: string | null
+  lastHeardSec?: number | null
+  snr?: number | null
+  rssi?: number | null
   latitude?: number
   longitude?: number
   role?: string | number
@@ -20,28 +21,38 @@ export type NormalizedNode = {
 
 export type NormalizedPacket = {
   id?: number | string
-  rxTime?: number | string
+  rxTime?: string | null
+  rxTimeSec?: number | null
   from?: number
+  fromId?: string
   to?: number
+  toId?: string
   channel?: number | string
   portnum?: number | string
+  app?: string
   type?: string
-  rssi?: number
-  snr?: number
+  rssi?: number | null
+  snr?: number | null
+  hasRadioMetrics?: boolean
   hopLimit?: number
   hopStart?: number
-  hopsUsed?: number
+  hopsUsed?: number | null
   raw: any
 }
 
 export type NormalizedMessage = {
   id?: number | string
-  rxTime?: number | string
+  rxTime?: string | null
+  rxTimeSec?: number | null
   from?: number
+  fromId?: string
   to?: number
+  toId?: string
   channel?: number | string
   text?: string
   portnum?: number | string
+  app?: string
+  type?: string
   packet?: NormalizedPacket
   raw: any
 }
@@ -111,7 +122,7 @@ function parseTime(value: any): number | undefined {
 }
 
 function packetTime(packet: NormalizedPacket): number | undefined {
-  return parseTime(packet.rxTime)
+  return packet.rxTimeSec ?? parseTime(packet.rxTime)
 }
 
 function normalizeLimit(value: any, defaultValue: number, maxValue: number) {
@@ -127,10 +138,29 @@ export function normalizeNodeId(num?: number | string, userId?: string): string 
   return `!${(parsed >>> 0).toString(16).padStart(8, '0')}`
 }
 
-export function calculateHopsUsed(hopStart?: number, hopLimit?: number): number | undefined {
-  if (hopStart === undefined || hopLimit === undefined) return undefined
-  let used = Number(hopStart) - Number(hopLimit)
-  return Number.isFinite(used) ? used : undefined
+export function normalizeDestinationId(num?: number | string): string | undefined {
+  let parsed = numeric(num)
+  if (parsed == 4294967295) return '^all'
+  return normalizeNodeId(num)
+}
+
+export function unixSecondsToIso(value?: number | string): string | null {
+  let seconds = parseTime(value)
+  if (seconds === undefined) return null
+  return new Date(seconds * 1000).toISOString()
+}
+
+export function calculateHopsUsed(hopStart?: number, hopLimit?: number): number | null {
+  if (hopStart === undefined || hopLimit === undefined) return null
+  if (!Number.isFinite(hopStart) || !Number.isFinite(hopLimit)) return null
+  if (hopStart <= 0 || hopLimit < 0 || hopStart < hopLimit) return null
+  return hopStart - hopLimit
+}
+
+export function normalizeRadioMetrics(rxRssi?: number, rxSnr?: number) {
+  if (rxRssi === undefined && rxSnr === undefined) return { rssi: null, snr: null, hasRadioMetrics: false }
+  if (rxRssi === 0 && rxSnr === 0) return { rssi: null, snr: null, hasRadioMetrics: false }
+  return { rssi: rxRssi ?? null, snr: rxSnr ?? null, hasRadioMetrics: true }
 }
 
 function getPacketDecoded(packet: any) {
@@ -141,32 +171,48 @@ function getPacketPortnum(packet: any): number | string | undefined {
   return getPacketDecoded(packet)?.portnum ?? packet?.data?.portnum ?? packet?.message?.portnum
 }
 
-function getPacketType(packet: any, portnum?: number | string): string | undefined {
-  if (packet?.message) return 'text'
-  if (packet?.event) return packet.event
-  if (packet?.data?.$typeName) return packet.data.$typeName
-  if (packet?.decoded?.$typeName) return packet.decoded.$typeName
-  if (packet?.payloadVariant?.case) return packet.payloadVariant.case
-  if (portnum !== undefined) return String(portnum)
-  return undefined
+function getPacketAppType(portnum?: number | string, decoded?: any) {
+  switch (numeric(portnum)) {
+    case 1:
+      return { app: 'TEXT_MESSAGE_APP', type: 'text' }
+    case 3:
+      return { app: 'POSITION_APP', type: 'position' }
+    case 5:
+      return { app: 'ROUTING_APP', type: 'routing' }
+    case 67:
+      return { app: 'TELEMETRY_APP', type: 'telemetry' }
+    case 70:
+      return { app: 'TRACEROUTE_APP', type: 'traceroute' }
+    default:
+      return { app: 'UNKNOWN_APP', type: decoded ? 'decoded' : 'unknown' }
+  }
 }
 
 export function normalizePacket(packet: MeshPacket | any): NormalizedPacket {
   let safePacket = jsonSafe(packet)
+  let decoded = getPacketDecoded(safePacket)
   let portnum = getPacketPortnum(safePacket)
+  let { app, type } = getPacketAppType(portnum, decoded)
   let hopStart = numeric(safePacket.hopStart)
   let hopLimit = numeric(safePacket.hopLimit)
+  let from = numeric(safePacket.from)
+  let to = numeric(safePacket.to)
+  let rxTimeSec = parseTime(safePacket.rxTime)
+  let radioMetrics = normalizeRadioMetrics(numeric(safePacket.rxRssi ?? safePacket.rssi), numeric(safePacket.rxSnr ?? safePacket.snr))
 
   return compact({
     id: safePacket.id,
-    rxTime: safePacket.rxTime,
-    from: numeric(safePacket.from),
-    to: numeric(safePacket.to),
+    rxTime: unixSecondsToIso(safePacket.rxTime),
+    rxTimeSec: rxTimeSec ?? null,
+    from,
+    fromId: normalizeNodeId(from),
+    to,
+    toId: normalizeDestinationId(to),
     channel: safePacket.channel,
     portnum,
-    type: getPacketType(safePacket, portnum),
-    rssi: numeric(safePacket.rxRssi ?? safePacket.rssi),
-    snr: numeric(safePacket.rxSnr ?? safePacket.snr),
+    app,
+    type,
+    ...radioMetrics,
     hopLimit,
     hopStart,
     hopsUsed: calculateHopsUsed(hopStart, hopLimit),
@@ -178,15 +224,17 @@ export function normalizeNode(node: Partial<NodeInfo> | any): NormalizedNode {
   let safeNode = jsonSafe(node)
   let latitude = numeric(safeNode.position?.latitudeI) !== undefined ? numeric(safeNode.position.latitudeI) / 10000000 : numeric(safeNode.latitude ?? safeNode.approximatePosition?.latitude)
   let longitude = numeric(safeNode.position?.longitudeI) !== undefined ? numeric(safeNode.position.longitudeI) / 10000000 : numeric(safeNode.longitude ?? safeNode.approximatePosition?.longitude)
+  let lastHeardSec = parseTime(safeNode.lastHeard)
 
   return compact({
     num: numeric(safeNode.num),
     id: normalizeNodeId(safeNode.num, safeNode.user?.id ?? safeNode.id),
     longName: safeNode.user?.longName ?? safeNode.longName,
     shortName: safeNode.user?.shortName ?? safeNode.shortName,
-    lastHeard: safeNode.lastHeard,
-    snr: numeric(safeNode.snr),
-    rssi: numeric(safeNode.rssi ?? safeNode.rxRssi),
+    lastHeard: unixSecondsToIso(safeNode.lastHeard),
+    lastHeardSec: lastHeardSec ?? null,
+    snr: numeric(safeNode.snr) ?? null,
+    rssi: numeric(safeNode.rssi ?? safeNode.rxRssi) ?? null,
     latitude,
     longitude,
     role: safeNode.user?.role ?? safeNode.role
@@ -208,12 +256,17 @@ export function normalizeMessage(message: MeshPacket | any): NormalizedMessage {
   let packet = normalizePacket(safeMessage)
   return compact({
     id: packet.id ?? safeMessage.message?.id,
-    rxTime: packet.rxTime ?? safeMessage.message?.rxTime,
+    rxTime: packet.rxTime ?? unixSecondsToIso(safeMessage.message?.rxTime),
+    rxTimeSec: packet.rxTimeSec ?? parseTime(safeMessage.message?.rxTime) ?? null,
     from: packet.from ?? numeric(safeMessage.message?.from),
+    fromId: packet.fromId ?? normalizeNodeId(safeMessage.message?.from),
     to: packet.to ?? numeric(safeMessage.message?.to),
+    toId: packet.toId ?? normalizeDestinationId(safeMessage.message?.to),
     channel: packet.channel ?? safeMessage.message?.channel,
     text: extractText(safeMessage),
     portnum: packet.portnum,
+    app: packet.app,
+    type: packet.type,
     packet,
     raw: safeMessage
   })
