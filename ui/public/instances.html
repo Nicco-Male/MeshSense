@@ -1030,7 +1030,7 @@
         <div class="logo" aria-hidden="true"></div>
         <div>
           <h1>MeshSense Control</h1>
-          <div class="subtitle">Dashboard multi-istanza con marker uniformi, nodi MeshSense evidenziati e linee RX/trace</div>
+          <div class="subtitle">Dashboard multi-istanza con marker uniformi, nodi MeshSense evidenziati e traceroute reali</div>
         </div>
       </div>
       <div class="actions">
@@ -1125,7 +1125,7 @@
               </label>
               <label class="toggle">
                 <input type="checkbox" id="toggleLines" checked />
-                Linee trace/RX
+                TraceRoute reali
               </label>
               <button class="btn" id="btnCenterLocal" type="button">Centra MeshSense</button>
             </div>
@@ -1598,6 +1598,11 @@
     }
 
     function processPacketEdges(packet, instance) {
+      // v5: le linee devono essere coerenti con MeshSense/Meshtastic.
+      // Disegniamo SOLO traceroute reali, cioè RouteDiscovery/TRACEROUTE_APP
+      // già decodificati dal backend in un array ordinato di nodi.
+      // Non disegniamo più collegamenti RX presunti o from→to generici, perché
+      // quelli producono la raggiera falsa vista sulla mappa.
       const route = extractRouteIds(packet);
       if (route.length >= 2) {
         addEdge("trace", instance, route, {
@@ -1605,76 +1610,13 @@
           hopsUsed: packet.hopsUsed,
           hopStart: packet.hopStart,
           hopLimit: packet.hopLimit,
+          traceroute: true,
         });
-        return;
-      }
-
-      const fromId = normalizeNodeId(packet.fromId || packet.from);
-      const toId = normalizeNodeId(packet.toId || packet.to);
-      const rt = getRuntime(instance.id);
-
-      if (fromId && toId && toId !== "!ffffffff") {
-        addEdge("packet", instance, [fromId, toId], { packetId: packet.id });
-        return;
-      }
-
-      const localIds = Array.from(rt.localNodeIds || []);
-      if (fromId && localIds.length && !localIds.includes(fromId)) {
-        addEdge("rx", instance, [localIds[0], fromId], {
-          packetId: packet.id,
-          rssi: packet.rssi,
-          snr: packet.snr,
-          hopsUsed: packet.hopsUsed,
-        });
-      }
-    }
-
-
-    function ensureSyntheticRxEdges() {
-      // v4: mostra sempre una linea RX tra ogni nodo MeshSense locale e i nodi
-      // con coordinate visti dalla stessa istanza. I traceroute veri restano
-      // separati e vengono disegnati quando il backend li espone già decodificati.
-      for (const key of Array.from(state.edges.keys())) {
-        const edge = state.edges.get(key);
-        if (edge && edge.kind === "rx-auto") state.edges.delete(key);
-      }
-
-      for (const instance of state.instances) {
-        const rt = getRuntime(instance.id);
-        const nodes = state.nodesByInstance.get(instance.id);
-        if (!nodes || !nodes.size) continue;
-
-        const localIds = new Set(rt.localNodeIds || []);
-        for (const node of nodes.values()) {
-          if (node._isMeshSenseLocal) localIds.add(node.id);
-        }
-
-        const localNodes = Array.from(localIds)
-          .map(id => nodes.get(id) || findNodeById(id, instance.id))
-          .filter(node => node && validLatLon(node));
-
-        if (!localNodes.length) continue;
-
-        const mappedNodes = Array.from(nodes.values())
-          .filter(node => node && validLatLon(node) && !localIds.has(node.id));
-
-        for (const localNode of localNodes) {
-          for (const node of mappedNodes) {
-            addEdge("rx-auto", instance, [localNode.id, node.id], {
-              synthetic: true,
-              lastSeen: Date.now(),
-              rssi: node.rssi,
-              snr: node.snr,
-              hopsUsed: node.hopsUsed,
-            });
-          }
-        }
       }
     }
 
     function renderEdges() {
       if (!state.traceLayer) return;
-      ensureSyntheticRxEdges();
       const enabled = !el.lines || el.lines.checked;
       const alive = new Set();
       const ttl = 6 * 60 * 60 * 1000;
@@ -1688,24 +1630,23 @@
       rebuildMergedNodes();
 
       for (const [key, edge] of state.edges) {
-        if (edge.kind !== "rx-auto" && Date.now() - edge.lastSeen > ttl) {
+        if (Date.now() - edge.lastSeen > ttl) {
           state.edges.delete(key);
           continue;
         }
+
+        if (edge.kind !== "trace") continue;
 
         const latlngs = edge.ids.map(id => findNodeById(id, edge.instanceId)).filter(validLatLon).map(node => [Number(node.latitude), Number(node.longitude)]);
         if (latlngs.length < 2) continue;
         alive.add(key);
 
-        const isTrace = edge.kind === "trace";
-        const isPacket = edge.kind === "packet";
-        const isRxAuto = edge.kind === "rx-auto";
         const style = {
           pane: "tracePane",
-          color: isTrace ? "#ff7a1a" : (isPacket ? "#3b82f6" : "#111827"),
-          weight: isTrace ? 4 : (isRxAuto ? 2.5 : 2),
-          opacity: isTrace ? 0.92 : (isRxAuto ? 0.52 : 0.50),
-          dashArray: isTrace ? null : (isRxAuto ? "10 10" : "8 8"),
+          color: "#1d4ed8",
+          weight: 4,
+          opacity: 0.72,
+          dashArray: "12 8",
           lineCap: "round",
           lineJoin: "round",
           className: "trace-line",
@@ -1723,7 +1664,7 @@
         const names = edge.ids.map(id => displayNodeName(findNodeById(id, edge.instanceId) || { id })).join(" → ");
         line.bindPopup(`
           <div class="popup">
-            <h3>${edge.kind === "trace" ? "Traceroute" : edge.kind === "packet" ? "Packet path" : edge.kind === "rx-auto" ? "RX link automatico" : "RX link"}</h3>
+            <h3>Traceroute</h3>
             <div class="muted">${escapeHtml(edge.instanceName || "Istanza")}</div>
             <div style="margin-top:8px;" class="mono">${escapeHtml(names)}</div>
             <div style="margin-top:8px;" class="muted">${formatAge(edge.lastSeen)}</div>
