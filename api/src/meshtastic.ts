@@ -39,6 +39,7 @@ import exitHook from 'exit-hook'
 import * as geolib from 'geolib'
 import axios from 'axios'
 import { State } from './lib/state'
+import { recordMessage, recordNodeUpdate, recordPacket } from './lib/publicApi'
 
 let routeCache: State<Record<number, number[]>>
 
@@ -213,7 +214,7 @@ function processDecodedPortnumPacket(packet: Protobuf.Mesh.MeshPacket) {
     packets.upsert({ id: packet.id, neighbors: data.neighbors || [] })
 
     for (let neighbor of data.neighbors || []) {
-      nodes.upsert({ num: neighbor.nodeId, snr: neighbor.snr, lastHeard: Date.now() / 1000 })
+      recordNodeUpdate(nodes.upsert({ num: neighbor.nodeId, snr: neighbor.snr, lastHeard: Date.now() / 1000 }))
     }
   } catch (e) {
     console.log('[meshtastic] Unable to decode NEIGHBORINFO_APP packet', String(e))
@@ -343,7 +344,9 @@ export async function connect(address?: string) {
       let originalNodeRecord = nodes.value.find((n) => n.num == updates.num)
 
       let updatedNode = nodes.upsert(updates)
+      recordNodeUpdate(updatedNode)
       packets.push(copy(e))
+      recordPacket(e)
       processDecodedPortnumPacket(e)
 
       // Check and send trace route if needed
@@ -375,7 +378,7 @@ export async function connect(address?: string) {
     let existingNode = nodes.value.find((n) => e.num == n.num)
     if (existingNode?.lastHeard > e.lastHeard) e.lastHeard = existingNode.lastHeard
     checkForCachedRoute(e as any)
-    nodes.upsert(copy(e))
+    recordNodeUpdate(nodes.upsert(copy(e)))
   })
 
   /** Update Node User data */
@@ -385,6 +388,7 @@ export async function connect(address?: string) {
     if (id) packet = packets.upsert({ id, data })
     if (from) {
       let node = nodes.upsert({ num: from, user: data })
+      recordNodeUpdate(node)
       if (packet?.viaMqtt === false) sendToMeshMap({ num: from, user: data }, node, packet)
     }
   })
@@ -397,6 +401,7 @@ export async function connect(address?: string) {
     let packet: MeshPacket
     packet = packets.upsert({ id: message.id, message })
     messageHistory.upsert(packet)
+    recordMessage(packet)
     let node = getNodeById(packet.from)
     if (packet?.viaMqtt === false && node.user) sendToMeshMap({ num: message.from }, node, packet)
   })
@@ -407,6 +412,7 @@ export async function connect(address?: string) {
     let telemetry = extractPayload(data)
     let packet = packets.upsert({ id, data })
     let node = nodes.upsert({ num: e.from, ...telemetry })
+    recordNodeUpdate(node)
     if (packet?.viaMqtt === false && node.user) sendToMeshMap({ num: e.from, ...telemetry }, node, packet)
   })
 
@@ -417,6 +423,7 @@ export async function connect(address?: string) {
     if (id && data.latitudeI) packet = packets.upsert({ id, data })
     if (e.from && data.latitudeI) {
       let node = nodes.upsert({ num: e.from, position: data })
+      recordNodeUpdate(node)
       if (packet?.viaMqtt === false && node.user) sendToMeshMap({ num: e.from, position: data }, node, packet)
     }
   })
@@ -507,12 +514,14 @@ export async function connect(address?: string) {
     if (id) packet = packets.upsert({ id, data })
     if (e.from && data) {
       let node = nodes.upsert({ num: e.from, trace: data })
+      recordNodeUpdate(node)
       if (routeCache) routeCache.assign({ [e.from]: data })
       if (packet?.viaMqtt === false) sendToMeshMap({ num: e.from, trace: data }, node, packet)
       // Update lastHeard of all nodes in the traceroute chain
       for (let num of data.route) {
         let approximatePosition = getApproximatePosition(num)
         let node = nodes.upsert({ num, lastHeard: Date.now() / 1000, approximatePosition })
+        recordNodeUpdate(node)
         if (packet?.viaMqtt === false) sendToMeshMap({ num, approximatePosition }, node)
       }
     }
@@ -530,7 +539,7 @@ export async function connect(address?: string) {
     if (id) packets.upsert({ id, neighbors: data?.neighbors || [] })
     if (data?.neighbors) {
       for (let neighbor of data.neighbors) {
-        nodes.upsert({ num: neighbor.nodeId, snr: neighbor.snr, lastHeard: Date.now() / 1000 })
+        recordNodeUpdate(nodes.upsert({ num: neighbor.nodeId, snr: neighbor.snr, lastHeard: Date.now() / 1000 }))
       }
     }
   })
@@ -543,7 +552,8 @@ export async function connect(address?: string) {
       message.show = true
       message.readable = message.decoded.replace(/[^\x20-\x7E]/g, '')
     }
-    packets.upsert({ id: message.id, message })
+    let packet = packets.upsert({ id: message.id, message })
+    recordMessage(packet)
   })
 
   // Attempt to connect to the specified MeshTastic Node

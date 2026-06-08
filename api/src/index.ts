@@ -6,6 +6,7 @@ if (!(globalThis as any).crypto) {
 import 'dotenv/config'
 import './lib/persistence'
 import { app, createRoutes, finalize, server } from './lib/server'
+import { installPublicApi } from './lib/publicApi'
 import './meshtastic'
 import { connect, disconnect, deleteNodes, requestPosition, send, traceRoute, setPosition, deviceConfig } from './meshtastic'
 import { listSerialPorts } from './lib/serial'
@@ -52,6 +53,7 @@ function isAuthorized(req: any) {
 }
 
 createRoutes((app) => {
+  installPublicApi(app, server)
   app.post('/send', (req, res) => {
     if (!allowRemoteMessaging.value && !isAuthorized(req)) return res.sendStatus(403)
     let message = req.body.message
