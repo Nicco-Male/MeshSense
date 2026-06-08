@@ -1,0 +1,1917 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MeshSense Instances Dashboard</title>
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIINfQzR2ATSgkfvjZivYFyWi/iZ6v7tZ5c="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+
+  <!-- Leaflet critical CSS embedded.
+       This prevents broken tile layout if the external Leaflet CSS is blocked,
+       cached badly, stripped by proxy, or loaded after the map initializes. -->
+  <style>
+    .leaflet-pane,
+    .leaflet-tile,
+    .leaflet-marker-icon,
+    .leaflet-marker-shadow,
+    .leaflet-tile-container,
+    .leaflet-pane > svg,
+    .leaflet-pane > canvas,
+    .leaflet-zoom-box,
+    .leaflet-image-layer,
+    .leaflet-layer {
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+
+    .leaflet-container {
+      overflow: hidden;
+      touch-action: pan-x pan-y;
+      font-family: var(--sans, system-ui, sans-serif);
+      background: #0a1711;
+      outline-offset: 1px;
+    }
+
+    .leaflet-tile,
+    .leaflet-marker-icon,
+    .leaflet-marker-shadow {
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .leaflet-tile::selection {
+      background: transparent;
+    }
+
+    .leaflet-safari .leaflet-tile {
+      image-rendering: -webkit-optimize-contrast;
+    }
+
+    .leaflet-safari .leaflet-tile-container {
+      width: 1600px;
+      height: 1600px;
+      transform-origin: 0 0;
+    }
+
+    .leaflet-marker-icon,
+    .leaflet-marker-shadow {
+      display: block;
+    }
+
+    .leaflet-container .leaflet-overlay-pane svg {
+      max-width: none !important;
+      max-height: none !important;
+    }
+
+    .leaflet-container .leaflet-marker-pane img,
+    .leaflet-container .leaflet-shadow-pane img,
+    .leaflet-container .leaflet-tile-pane img,
+    .leaflet-container img.leaflet-image-layer,
+    .leaflet-container .leaflet-tile {
+      max-width: none !important;
+      max-height: none !important;
+      width: 256px;
+      height: 256px;
+      padding: 0;
+    }
+
+    .leaflet-tile-container {
+      pointer-events: none;
+    }
+
+    .leaflet-tooltip-pane {
+      z-index: 650;
+    }
+
+    .leaflet-popup-pane {
+      z-index: 700;
+    }
+
+    .leaflet-map-pane canvas {
+      z-index: 100;
+    }
+
+    .leaflet-map-pane svg {
+      z-index: 200;
+    }
+
+    .leaflet-tile-pane {
+      z-index: 200;
+    }
+
+    .leaflet-overlay-pane {
+      z-index: 400;
+    }
+
+    .leaflet-shadow-pane {
+      z-index: 500;
+    }
+
+    .leaflet-marker-pane {
+      z-index: 600;
+    }
+
+    .leaflet-tooltip-pane {
+      z-index: 650;
+    }
+
+    .leaflet-popup-pane {
+      z-index: 700;
+    }
+
+    .leaflet-control {
+      position: relative;
+      z-index: 800;
+      pointer-events: visiblePainted;
+      pointer-events: auto;
+    }
+
+    .leaflet-top,
+    .leaflet-bottom {
+      position: absolute;
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    .leaflet-top {
+      top: 0;
+    }
+
+    .leaflet-right {
+      right: 0;
+    }
+
+    .leaflet-bottom {
+      bottom: 0;
+    }
+
+    .leaflet-left {
+      left: 0;
+    }
+
+    .leaflet-control {
+      float: left;
+      clear: both;
+    }
+
+    .leaflet-right .leaflet-control {
+      float: right;
+    }
+
+    .leaflet-top .leaflet-control {
+      margin-top: 10px;
+    }
+
+    .leaflet-bottom .leaflet-control {
+      margin-bottom: 10px;
+    }
+
+    .leaflet-left .leaflet-control {
+      margin-left: 10px;
+    }
+
+    .leaflet-right .leaflet-control {
+      margin-right: 10px;
+    }
+
+    .leaflet-fade-anim .leaflet-popup {
+      opacity: 0;
+      transition: opacity 0.2s linear;
+    }
+
+    .leaflet-fade-anim .leaflet-map-pane .leaflet-popup {
+      opacity: 1;
+    }
+
+    .leaflet-zoom-animated {
+      transform-origin: 0 0;
+    }
+
+    svg.leaflet-zoom-animated {
+      will-change: transform;
+    }
+
+    .leaflet-zoom-anim .leaflet-zoom-animated {
+      transition: transform 0.25s cubic-bezier(0, 0, 0.25, 1);
+    }
+
+    .leaflet-zoom-anim .leaflet-tile,
+    .leaflet-pan-anim .leaflet-tile {
+      transition: none;
+    }
+
+    .leaflet-interactive {
+      cursor: pointer;
+    }
+
+    .leaflet-grab {
+      cursor: grab;
+    }
+
+    .leaflet-dragging .leaflet-grab,
+    .leaflet-dragging .leaflet-grab .leaflet-interactive {
+      cursor: grabbing;
+    }
+
+    .leaflet-popup {
+      position: absolute;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .leaflet-popup-content-wrapper {
+      padding: 1px;
+      text-align: left;
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.4);
+    }
+
+    .leaflet-popup-content {
+      margin: 13px 19px;
+      line-height: 1.4;
+      font-size: 13px;
+      min-height: 1px;
+    }
+
+    .leaflet-popup-tip-container {
+      width: 40px;
+      height: 20px;
+      position: absolute;
+      left: 50%;
+      margin-top: -1px;
+      margin-left: -20px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .leaflet-popup-tip {
+      width: 17px;
+      height: 17px;
+      padding: 1px;
+      margin: -10px auto 0;
+      transform: rotate(45deg);
+      background: white;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.4);
+    }
+
+    .leaflet-popup-close-button {
+      position: absolute;
+      top: 0;
+      right: 0;
+      border: none;
+      text-align: center;
+      width: 24px;
+      height: 24px;
+      font: 16px/24px Tahoma, Verdana, sans-serif;
+      color: #757575;
+      text-decoration: none;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .leaflet-tooltip {
+      position: absolute;
+      padding: 6px;
+      background-color: #fff;
+      border: 1px solid #fff;
+      border-radius: 3px;
+      color: #222;
+      white-space: nowrap;
+      user-select: none;
+      pointer-events: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+
+    .leaflet-control-zoom a {
+      display: block;
+      width: 30px;
+      height: 30px;
+      line-height: 30px;
+      text-align: center;
+      text-decoration: none;
+      color: #111;
+      background: rgba(255,255,255,0.95);
+      border-bottom: 1px solid #ccc;
+    }
+
+    .leaflet-control-zoom a:first-child {
+      border-top-left-radius: 4px;
+      border-top-right-radius: 4px;
+    }
+
+    .leaflet-control-zoom a:last-child {
+      border-bottom-left-radius: 4px;
+      border-bottom-right-radius: 4px;
+      border-bottom: none;
+    }
+
+    .leaflet-control-attribution {
+      background: rgba(255,255,255,0.78);
+      margin: 0;
+      padding: 0 5px;
+      color: #333;
+      font-size: 11px;
+    }
+  </style>
+
+  <style>
+    :root {
+      --bg: #07110d;
+      --panel: #0d1d16;
+      --panel2: #10281e;
+      --card: #10251c;
+      --border: rgba(115, 255, 171, 0.18);
+      --text: #eafff2;
+      --muted: #9bc8af;
+      --green: #67e89a;
+      --green2: #22c55e;
+      --yellow: #facc15;
+      --red: #f87171;
+      --blue: #60a5fa;
+      --shadow: 0 18px 60px rgba(0, 0, 0, 0.36);
+      --radius: 18px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% 0%, rgba(34, 197, 94, 0.16), transparent 34rem),
+        radial-gradient(circle at 75% 10%, rgba(96, 165, 250, 0.10), transparent 28rem),
+        var(--bg);
+      min-height: 100vh;
+    }
+
+    a {
+      color: var(--green);
+      text-decoration: none;
+    }
+
+    button, input, select {
+      font: inherit;
+    }
+
+    .page {
+      max-width: 1760px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .topbar {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background:
+        linear-gradient(135deg, rgba(103, 232, 154, 0.95), rgba(34, 197, 94, 0.45)),
+        radial-gradient(circle at 70% 20%, #fff, transparent 0.55rem);
+      box-shadow: 0 0 30px rgba(103, 232, 154, 0.22);
+      position: relative;
+    }
+
+    .logo::after {
+      content: "";
+      position: absolute;
+      inset: 12px;
+      border: 2px solid rgba(7, 17, 13, 0.9);
+      border-radius: 999px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 2vw, 36px);
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(16, 37, 28, 0.82);
+      color: var(--text);
+      padding: 10px 13px;
+      cursor: pointer;
+      transition: 120ms ease;
+      min-height: 40px;
+    }
+
+    .btn:hover {
+      border-color: rgba(103, 232, 154, 0.55);
+      transform: translateY(-1px);
+    }
+
+    .btn.primary {
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.95), rgba(20, 184, 166, 0.7));
+      color: #03130a;
+      font-weight: 750;
+      border-color: rgba(103, 232, 154, 0.7);
+    }
+
+    .btn.danger {
+      border-color: rgba(248, 113, 113, 0.28);
+      color: #fecaca;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      background: rgba(13, 29, 22, 0.82);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+    }
+
+    .panel-head {
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid rgba(115, 255, 171, 0.10);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .stat {
+      background: rgba(16, 37, 28, 0.72);
+      border: 1px solid rgba(115, 255, 171, 0.14);
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .stat-label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin-top: 8px;
+    }
+
+    .form {
+      display: grid;
+      gap: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    input {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid rgba(115, 255, 171, 0.16);
+      background: rgba(4, 13, 9, 0.58);
+      color: var(--text);
+      padding: 10px 12px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: rgba(103, 232, 154, 0.65);
+      box-shadow: 0 0 0 3px rgba(103, 232, 154, 0.10);
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .instances {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .instance-card {
+      border: 1px solid rgba(115, 255, 171, 0.14);
+      border-radius: 16px;
+      background: rgba(16, 37, 28, 0.62);
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .instance-main {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .instance-name {
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .instance-url {
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--mono);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 290px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(115, 255, 171, 0.16);
+      padding: 5px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #64748b;
+      box-shadow: 0 0 18px currentColor;
+    }
+
+    .status.online .dot {
+      background: var(--green);
+      color: var(--green);
+    }
+
+    .status.warn .dot {
+      background: var(--yellow);
+      color: var(--yellow);
+    }
+
+    .status.offline .dot {
+      background: var(--red);
+      color: var(--red);
+    }
+
+    .instance-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      background: rgba(4, 13, 9, 0.4);
+      border-radius: 12px;
+      padding: 8px;
+      min-width: 0;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 3px;
+    }
+
+    .metric strong {
+      font-size: 13px;
+      overflow: hidden;
+      display: block;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .row-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .row-actions .btn {
+      padding: 8px 10px;
+      min-height: 34px;
+      font-size: 13px;
+    }
+
+    .map-wrap {
+      height: min(72vh, 780px);
+      min-height: 560px;
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    #map {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: #0a1711;
+      border-radius: 0 0 var(--radius) var(--radius);
+      overflow: hidden;
+    }
+
+    .leaflet-container {
+      width: 100%;
+      height: 100%;
+      background: #0a1711;
+    }
+
+    .map-toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .toggle input {
+      width: auto;
+    }
+
+    .table-wrap {
+      max-height: 360px;
+      overflow: auto;
+      border-radius: 14px;
+      border: 1px solid rgba(115, 255, 171, 0.12);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 10px;
+      border-bottom: 1px solid rgba(115, 255, 171, 0.08);
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(4, 13, 9, 0.46);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    td {
+      color: #dffdea;
+    }
+
+    .mono {
+      font-family: var(--mono);
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .node-name {
+      font-weight: 760;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      border: 1px solid rgba(115, 255, 171, 0.16);
+      padding: 3px 7px;
+      color: var(--muted);
+      font-size: 11px;
+      margin: 2px 4px 2px 0;
+      white-space: nowrap;
+    }
+
+    .popup {
+      color: #10251c;
+      min-width: 220px;
+      font-family: var(--sans);
+    }
+
+    .popup h3 {
+      margin: 0 0 4px;
+      font-size: 15px;
+      color: #07110d;
+    }
+
+    .popup .muted {
+      color: #446653;
+    }
+
+    .popup-grid {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .popup-grid div {
+      background: rgba(16, 37, 28, 0.08);
+      border-radius: 8px;
+      padding: 6px;
+    }
+
+    .popup-grid span {
+      display: block;
+      color: #446653;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .log {
+      max-height: 180px;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      background: rgba(4, 13, 9, 0.44);
+      border: 1px solid rgba(115, 255, 171, 0.11);
+      border-radius: 14px;
+      padding: 10px;
+      white-space: pre-wrap;
+    }
+
+    .leaflet-container {
+      font-family: var(--sans);
+    }
+
+    .leaflet-control-layers,
+    .leaflet-bar a,
+    .leaflet-bar a:hover {
+      background: rgba(236, 253, 245, 0.96);
+    }
+
+
+    #map .leaflet-map-pane,
+    #map .leaflet-tile-pane,
+    #map .leaflet-tile-container,
+    #map .leaflet-pane,
+    #map .leaflet-layer,
+    #map .leaflet-tile {
+      position: absolute !important;
+    }
+
+    #map .leaflet-tile {
+      width: 256px !important;
+      height: 256px !important;
+      max-width: none !important;
+      max-height: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      border: 0 !important;
+      display: block !important;
+    }
+
+    @media (max-width: 1180px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .map-wrap {
+        height: 68vh;
+      }
+
+      .stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 680px) {
+      .page {
+        padding: 12px;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .actions {
+        justify-content: flex-start;
+      }
+
+      .instance-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .stats {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .map-wrap {
+        min-height: 480px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true"></div>
+        <div>
+          <h1>MeshSense Control</h1>
+          <div class="subtitle">Dashboard multi-istanza con mappa mondiale OpenStreetMap e nodi Meshtastic live</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnRefreshAll">Refresh</button>
+        <button class="btn" id="btnFit">Fit mappa</button>
+        <button class="btn" id="btnExport">Esporta JSON</button>
+        <label class="btn" for="importFile">Importa JSON</label>
+        <input id="importFile" type="file" accept="application/json,.json" hidden />
+      </div>
+    </header>
+
+    <section class="stats">
+      <div class="stat">
+        <div class="stat-label">Istanze</div>
+        <div class="stat-value" id="statInstances">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Online</div>
+        <div class="stat-value" id="statOnline">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Nodi totali</div>
+        <div class="stat-value" id="statNodes">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Nodi in mappa</div>
+        <div class="stat-value" id="statMapped">0</div>
+      </div>
+    </section>
+
+    <main class="layout">
+      <aside class="grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Aggiungi istanza</h2>
+          </div>
+          <div class="panel-body">
+            <form class="form" id="instanceForm">
+              <div class="field">
+                <label for="instanceName">Nome</label>
+                <input id="instanceName" placeholder="Casa / Ufficio / OrangePi" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="instanceUrl">URL MeshSense</label>
+                <input id="instanceUrl" placeholder="https://mesh.niccomale.it oppure http://10.65.190.16:5920" autocomplete="off" />
+                <div class="hint">Usa l’URL base dell’istanza. La dashboard userà automaticamente <span class="mono">/api/health</span>, <span class="mono">/api/nodes</span> e <span class="mono">/api/live</span>.</div>
+              </div>
+              <div class="field">
+                <label for="instanceKey">Access key opzionale</label>
+                <input id="instanceKey" placeholder="Solo se configurata su MeshSense" autocomplete="off" />
+              </div>
+              <button class="btn primary" type="submit">Aggiungi / salva</button>
+            </form>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Istanze</h2>
+          </div>
+          <div class="panel-body">
+            <div class="instances" id="instances"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Log dashboard</h2>
+          </div>
+          <div class="panel-body">
+            <div class="log" id="log"></div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Mappa mondiale nodi live</h2>
+            <div class="map-toolbar">
+              <label class="toggle">
+                <input type="checkbox" id="toggleOnlyMapped" checked />
+                Solo nodi con coordinate
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="toggleAutoFit" />
+                Auto-fit
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="toggleMerge" checked />
+                Unisci stesso nodo
+              </label>
+            </div>
+          </div>
+          <div class="map-wrap">
+            <div id="map"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Nodi aggregati</h2>
+            <div class="hint" id="nodesHint">—</div>
+          </div>
+          <div class="panel-body">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nodo</th>
+                    <th>Istanze</th>
+                    <th>Ultimo ascolto</th>
+                    <th>RSSI/SNR</th>
+                    <th>Hop</th>
+                    <th>Coordinate</th>
+                  </tr>
+                </thead>
+                <tbody id="nodesTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "meshsense.instances.dashboard.v2";
+    const MAX_LOG_LINES = 180;
+    const COLORS = ["#67e89a", "#60a5fa", "#facc15", "#f472b6", "#c084fc", "#fb923c", "#22d3ee", "#a3e635"];
+
+    const state = {
+      instances: [],
+      sockets: new Map(),
+      instanceRuntime: new Map(),
+      nodesByInstance: new Map(),
+      mergedNodes: new Map(),
+      markers: new Map(),
+      map: null,
+      nodeLayer: null,
+      logLines: [],
+    };
+
+    const el = {
+      form: document.getElementById("instanceForm"),
+      name: document.getElementById("instanceName"),
+      url: document.getElementById("instanceUrl"),
+      key: document.getElementById("instanceKey"),
+      instances: document.getElementById("instances"),
+      log: document.getElementById("log"),
+      statInstances: document.getElementById("statInstances"),
+      statOnline: document.getElementById("statOnline"),
+      statNodes: document.getElementById("statNodes"),
+      statMapped: document.getElementById("statMapped"),
+      nodesTable: document.getElementById("nodesTable"),
+      nodesHint: document.getElementById("nodesHint"),
+      btnRefreshAll: document.getElementById("btnRefreshAll"),
+      btnFit: document.getElementById("btnFit"),
+      btnExport: document.getElementById("btnExport"),
+      importFile: document.getElementById("importFile"),
+      onlyMapped: document.getElementById("toggleOnlyMapped"),
+      autoFit: document.getElementById("toggleAutoFit"),
+      merge: document.getElementById("toggleMerge"),
+    };
+
+    function nowIso() {
+      return new Date().toISOString();
+    }
+
+    function safeId() {
+      return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+    }
+
+    function normalizeBaseUrl(url) {
+      const trimmed = String(url || "").trim();
+      if (!trimmed) return "";
+      const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : "http://" + trimmed;
+      const parsed = new URL(withScheme);
+      parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+      parsed.search = "";
+      parsed.hash = "";
+      return parsed.toString().replace(/\/$/, "");
+    }
+
+    function apiUrl(instance, path) {
+      return instance.baseUrl.replace(/\/$/, "") + path;
+    }
+
+    function wsUrl(instance) {
+      const u = new URL(instance.baseUrl);
+      u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+      u.pathname = u.pathname.replace(/\/+$/, "") + "/api/live";
+      u.search = "";
+      u.hash = "";
+      if (instance.accessKey) {
+        u.searchParams.set("key", instance.accessKey);
+      }
+      return u.toString();
+    }
+
+    function authHeaders(instance) {
+      const headers = {};
+      if (instance.accessKey) {
+        headers.Authorization = "Bearer " + instance.accessKey;
+        headers["X-Access-Key"] = instance.accessKey;
+      }
+      return headers;
+    }
+
+    function log(message) {
+      const line = `[${new Date().toLocaleTimeString()}] ${message}`;
+      state.logLines.unshift(line);
+      state.logLines = state.logLines.slice(0, MAX_LOG_LINES);
+      el.log.textContent = state.logLines.join("\n");
+    }
+
+    function loadInstances() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          state.instances = JSON.parse(raw);
+        }
+      } catch (err) {
+        log("Config localStorage non valida, reset.");
+        state.instances = [];
+      }
+
+      if (!state.instances.length) {
+        const current = window.location.origin;
+        if (current && current !== "null") {
+          state.instances = [{
+            id: safeId(),
+            name: "Locale",
+            baseUrl: current,
+            accessKey: "",
+            color: COLORS[0],
+            createdAt: nowIso(),
+          }];
+          saveInstances();
+        }
+      }
+
+      state.instances = state.instances.map((item, index) => ({
+        id: item.id || safeId(),
+        name: item.name || `Istanza ${index + 1}`,
+        baseUrl: normalizeBaseUrl(item.baseUrl || item.url || ""),
+        accessKey: item.accessKey || item.key || "",
+        color: item.color || COLORS[index % COLORS.length],
+        createdAt: item.createdAt || nowIso(),
+      })).filter(item => item.baseUrl);
+      saveInstances();
+    }
+
+    function saveInstances() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.instances, null, 2));
+    }
+
+    function getRuntime(instanceId) {
+      if (!state.instanceRuntime.has(instanceId)) {
+        state.instanceRuntime.set(instanceId, {
+          status: "offline",
+          health: null,
+          statusData: null,
+          nodeCount: 0,
+          mappedCount: 0,
+          packetCount: 0,
+          messageCount: 0,
+          lastEvent: null,
+          lastError: null,
+          connectedAt: null,
+        });
+      }
+      return state.instanceRuntime.get(instanceId);
+    }
+
+
+    function fixMapSize() {
+      if (!state.map) return;
+      requestAnimationFrame(() => {
+        state.map.invalidateSize(true);
+        setTimeout(() => state.map.invalidateSize(true), 80);
+        setTimeout(() => state.map.invalidateSize(true), 300);
+      });
+    }
+
+    function attachMapResizeObserver() {
+      const mapElement = document.getElementById("map");
+      const wrapElement = mapElement ? mapElement.parentElement : null;
+      if (!mapElement || !wrapElement || typeof ResizeObserver === "undefined") return;
+
+      const observer = new ResizeObserver(() => fixMapSize());
+      observer.observe(mapElement);
+      observer.observe(wrapElement);
+    }
+
+    function initMap() {
+      state.map = L.map("map", {
+        zoomControl: true,
+        preferCanvas: true,
+        worldCopyJump: true,
+        zoomSnap: 0.25,
+        zoomDelta: 0.5,
+        zoomAnimation: false,
+        fadeAnimation: false,
+        markerZoomAnimation: false,
+      }).setView([20, 0], 2);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        minZoom: 2,
+        maxZoom: 19,
+        noWrap: false,
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(state.map);
+
+      state.nodeLayer = L.layerGroup().addTo(state.map);
+
+      attachMapResizeObserver();
+      fixMapSize();
+      window.addEventListener("resize", fixMapSize);
+    }
+
+    function validLatLon(node) {
+      const lat = Number(node.latitude);
+      const lon = Number(node.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+      if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return false;
+      if (lat === 0 && lon === 0) return false;
+      return true;
+    }
+
+    function nodeKey(node) {
+      return node.id || node.fromId || (node.num ? `!${Number(node.num).toString(16).padStart(8, "0")}` : "");
+    }
+
+    function displayNodeName(node) {
+      return node.longName || node.shortName || node.id || node.fromId || String(node.num || "Sconosciuto");
+    }
+
+    function lastHeardMs(node) {
+      if (Number.isFinite(Number(node.lastHeardSec))) return Number(node.lastHeardSec) * 1000;
+      if (Number.isFinite(Number(node.rxTimeSec))) return Number(node.rxTimeSec) * 1000;
+      const raw = node.lastHeard || node.rxTime;
+      const parsed = raw ? Date.parse(raw) : NaN;
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function formatAge(ms) {
+      if (!ms) return "—";
+      const diff = Math.max(0, Date.now() - ms);
+      const sec = Math.floor(diff / 1000);
+      if (sec < 60) return `${sec}s fa`;
+      const min = Math.floor(sec / 60);
+      if (min < 60) return `${min}m fa`;
+      const h = Math.floor(min / 60);
+      if (h < 48) return `${h}h fa`;
+      const d = Math.floor(h / 24);
+      return `${d}g fa`;
+    }
+
+    function ageOpacity(ms) {
+      if (!ms) return 0.35;
+      const diffMin = (Date.now() - ms) / 60000;
+      if (diffMin < 10) return 0.9;
+      if (diffMin < 60) return 0.72;
+      if (diffMin < 360) return 0.55;
+      return 0.38;
+    }
+
+    function normalizeNode(raw, instance) {
+      const node = { ...raw };
+      const id = nodeKey(node);
+      if (!id) return null;
+      node.id = id;
+      node.instanceId = instance.id;
+      node.instanceName = instance.name;
+      node.instanceColor = instance.color;
+      node._lastHeardMs = lastHeardMs(node);
+      node._hasPosition = validLatLon(node);
+      return node;
+    }
+
+    function normalizeNodesPayload(payload) {
+      if (!payload) return [];
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload.nodes)) return payload.nodes;
+      if (Array.isArray(payload.data)) return payload.data;
+      if (payload.nodes && typeof payload.nodes === "object") return Object.values(payload.nodes);
+      if (payload.data && typeof payload.data === "object") return Object.values(payload.data);
+      if (typeof payload === "object") return Object.values(payload).filter(v => v && typeof v === "object");
+      return [];
+    }
+
+    function upsertNode(rawNode, instance) {
+      const normalized = normalizeNode(rawNode, instance);
+      if (!normalized) return;
+
+      if (!state.nodesByInstance.has(instance.id)) {
+        state.nodesByInstance.set(instance.id, new Map());
+      }
+
+      const nodes = state.nodesByInstance.get(instance.id);
+      const prev = nodes.get(normalized.id) || {};
+
+      const merged = {
+        ...prev,
+        ...normalized,
+        latitude: normalized.latitude ?? prev.latitude,
+        longitude: normalized.longitude ?? prev.longitude,
+        longName: normalized.longName || prev.longName,
+        shortName: normalized.shortName || prev.shortName,
+        role: normalized.role ?? prev.role,
+        rssi: normalized.rssi ?? prev.rssi,
+        snr: normalized.snr ?? prev.snr,
+        hopLimit: normalized.hopLimit ?? prev.hopLimit,
+        hopStart: normalized.hopStart ?? prev.hopStart,
+        hopsUsed: normalized.hopsUsed ?? prev.hopsUsed,
+        lastHeard: normalized.lastHeard || normalized.rxTime || prev.lastHeard,
+        lastHeardSec: normalized.lastHeardSec ?? normalized.rxTimeSec ?? prev.lastHeardSec,
+      };
+      merged._lastHeardMs = Math.max(lastHeardMs(merged), prev._lastHeardMs || 0);
+      merged._hasPosition = validLatLon(merged);
+      nodes.set(merged.id, merged);
+
+      const rt = getRuntime(instance.id);
+      rt.nodeCount = nodes.size;
+      rt.mappedCount = Array.from(nodes.values()).filter(validLatLon).length;
+      rt.lastEvent = `node_update ${merged.id}`;
+    }
+
+    function rebuildMergedNodes() {
+      state.mergedNodes.clear();
+
+      const mergeSame = el.merge.checked;
+      for (const instance of state.instances) {
+        const nodes = state.nodesByInstance.get(instance.id);
+        if (!nodes) continue;
+
+        for (const node of nodes.values()) {
+          const key = mergeSame ? node.id : `${instance.id}:${node.id}`;
+          const prev = state.mergedNodes.get(key);
+
+          if (!prev) {
+            state.mergedNodes.set(key, {
+              ...node,
+              seenBy: [{
+                id: instance.id,
+                name: instance.name,
+                color: instance.color,
+                rssi: node.rssi,
+                snr: node.snr,
+                lastHeardMs: node._lastHeardMs,
+              }],
+            });
+            continue;
+          }
+
+          prev.seenBy.push({
+            id: instance.id,
+            name: instance.name,
+            color: instance.color,
+            rssi: node.rssi,
+            snr: node.snr,
+            lastHeardMs: node._lastHeardMs,
+          });
+
+          if ((node._lastHeardMs || 0) >= (prev._lastHeardMs || 0)) {
+            Object.assign(prev, {
+              ...prev,
+              ...node,
+              seenBy: prev.seenBy,
+            });
+          } else {
+            prev.longName = prev.longName || node.longName;
+            prev.shortName = prev.shortName || node.shortName;
+            if (!validLatLon(prev) && validLatLon(node)) {
+              prev.latitude = node.latitude;
+              prev.longitude = node.longitude;
+              prev._hasPosition = true;
+            }
+          }
+        }
+      }
+    }
+
+    function markerPopup(node) {
+      const seen = (node.seenBy || []).map(item => `
+        <span style="display:inline-flex;align-items:center;gap:5px;margin:2px 4px 2px 0;">
+          <span style="width:8px;height:8px;border-radius:999px;background:${item.color};display:inline-block;"></span>${escapeHtml(item.name)}
+        </span>
+      `).join("");
+
+      const lat = Number(node.latitude);
+      const lon = Number(node.longitude);
+      const openUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=14/${lat}/${lon}`;
+
+      return `
+        <div class="popup">
+          <h3>${escapeHtml(displayNodeName(node))}</h3>
+          <div class="muted mono">${escapeHtml(node.id || "—")}</div>
+          <div style="margin-top:6px;">${seen}</div>
+          <div class="popup-grid">
+            <div><span>RSSI</span>${node.rssi ?? "—"}</div>
+            <div><span>SNR</span>${node.snr ?? "—"}</div>
+            <div><span>Hop</span>${node.hopsUsed ?? "—"} / ${node.hopStart ?? node.hopLimit ?? "—"}</div>
+            <div><span>Visto</span>${formatAge(node._lastHeardMs)}</div>
+            <div style="grid-column:1 / -1;"><span>Coordinate</span><span class="mono">${lat.toFixed(6)}, ${lon.toFixed(6)}</span></div>
+          </div>
+          <div style="margin-top:9px;"><a href="${openUrl}" target="_blank" rel="noreferrer">Apri in OSM</a></div>
+        </div>
+      `;
+    }
+
+    function renderMarkers() {
+      if (!state.nodeLayer) return;
+      fixMapSize();
+
+      rebuildMergedNodes();
+
+      const existingKeys = new Set();
+      const bounds = [];
+
+      for (const [key, node] of state.mergedNodes) {
+        if (!validLatLon(node)) continue;
+        existingKeys.add(key);
+
+        const lat = Number(node.latitude);
+        const lon = Number(node.longitude);
+        const color = (node.seenBy && node.seenBy.length > 1) ? "#ffffff" : (node.instanceColor || "#67e89a");
+        const opacity = ageOpacity(node._lastHeardMs);
+        const radius = (node.role === 1 || node.role === 2 || node.role === 11 || node.role === 12) ? 8 : 6;
+
+        let marker = state.markers.get(key);
+        if (!marker) {
+          marker = L.circleMarker([lat, lon], {
+            radius,
+            color,
+            weight: node.seenBy && node.seenBy.length > 1 ? 3 : 2,
+            fillColor: color,
+            fillOpacity: opacity,
+            opacity: Math.min(1, opacity + 0.1),
+          });
+          marker.addTo(state.nodeLayer);
+          state.markers.set(key, marker);
+        } else {
+          marker.setLatLng([lat, lon]);
+          marker.setStyle({
+            radius,
+            color,
+            weight: node.seenBy && node.seenBy.length > 1 ? 3 : 2,
+            fillColor: color,
+            fillOpacity: opacity,
+            opacity: Math.min(1, opacity + 0.1),
+          });
+        }
+
+        marker.bindPopup(markerPopup(node));
+        marker.bindTooltip(`${displayNodeName(node)} · ${node.id}`, { direction: "top", sticky: true });
+        bounds.push([lat, lon]);
+      }
+
+      for (const [key, marker] of state.markers) {
+        if (!existingKeys.has(key)) {
+          state.nodeLayer.removeLayer(marker);
+          state.markers.delete(key);
+        }
+      }
+
+      if (el.autoFit.checked && bounds.length) {
+        fitMap(bounds);
+      }
+    }
+
+    function fitMap(boundsInput) {
+      fixMapSize();
+      const bounds = boundsInput || Array.from(state.mergedNodes.values())
+        .filter(validLatLon)
+        .map(node => [Number(node.latitude), Number(node.longitude)]);
+
+      if (!bounds.length) {
+        state.map.setView([20, 0], 2);
+        return;
+      }
+
+      if (bounds.length === 1) {
+        state.map.setView(bounds[0], 10);
+        return;
+      }
+
+      state.map.fitBounds(bounds, { padding: [45, 45], maxZoom: 13 });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function renderInstances() {
+      el.instances.innerHTML = "";
+
+      for (const instance of state.instances) {
+        const rt = getRuntime(instance.id);
+        const statusClass = rt.status === "online" ? "online" : (rt.status === "warn" ? "warn" : "offline");
+
+        const card = document.createElement("div");
+        card.className = "instance-card";
+        card.innerHTML = `
+          <div class="instance-main">
+            <div style="min-width:0;">
+              <div class="instance-name">
+                <span style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${instance.color};margin-right:7px;"></span>
+                ${escapeHtml(instance.name)}
+              </div>
+              <div class="instance-url">${escapeHtml(instance.baseUrl)}</div>
+            </div>
+            <div class="status ${statusClass}">
+              <span class="dot"></span>
+              ${escapeHtml(rt.status)}
+            </div>
+          </div>
+          <div class="instance-metrics">
+            <div class="metric"><span>Nodi</span><strong>${rt.nodeCount}</strong></div>
+            <div class="metric"><span>In mappa</span><strong>${rt.mappedCount}</strong></div>
+            <div class="metric"><span>Pacchetti</span><strong>${rt.packetCount}</strong></div>
+            <div class="metric"><span>Messaggi</span><strong>${rt.messageCount}</strong></div>
+          </div>
+          <div class="metric"><span>Ultimo evento</span><strong>${escapeHtml(rt.lastEvent || rt.lastError || "—")}</strong></div>
+          <div class="row-actions">
+            <button class="btn" data-action="refresh" data-id="${instance.id}">Refresh</button>
+            <button class="btn" data-action="connect" data-id="${instance.id}">Live</button>
+            <button class="btn" data-action="disconnect" data-id="${instance.id}">Stop live</button>
+            <a class="btn" href="${escapeHtml(instance.baseUrl)}" target="_blank" rel="noreferrer">Apri UI</a>
+            <button class="btn danger" data-action="remove" data-id="${instance.id}">Rimuovi</button>
+          </div>
+        `;
+        el.instances.appendChild(card);
+      }
+
+      el.instances.querySelectorAll("button[data-action]").forEach(button => {
+        button.addEventListener("click", () => {
+          const id = button.getAttribute("data-id");
+          const action = button.getAttribute("data-action");
+          const instance = state.instances.find(item => item.id === id);
+          if (!instance) return;
+
+          if (action === "refresh") refreshInstance(instance);
+          if (action === "connect") connectLive(instance);
+          if (action === "disconnect") disconnectLive(instance);
+          if (action === "remove") removeInstance(instance);
+        });
+      });
+    }
+
+    function renderStats() {
+      rebuildMergedNodes();
+
+      const online = state.instances.filter(item => getRuntime(item.id).status === "online").length;
+      const allNodes = Array.from(state.mergedNodes.values());
+      const mapped = allNodes.filter(validLatLon);
+
+      el.statInstances.textContent = String(state.instances.length);
+      el.statOnline.textContent = String(online);
+      el.statNodes.textContent = String(allNodes.length);
+      el.statMapped.textContent = String(mapped.length);
+      el.nodesHint.textContent = `${allNodes.length} nodi aggregati, ${mapped.length} con coordinate`;
+    }
+
+    function renderNodeTable() {
+      rebuildMergedNodes();
+
+      const rows = Array.from(state.mergedNodes.values())
+        .filter(node => !el.onlyMapped.checked || validLatLon(node))
+        .sort((a, b) => (b._lastHeardMs || 0) - (a._lastHeardMs || 0))
+        .slice(0, 350);
+
+      el.nodesTable.innerHTML = rows.map(node => {
+        const instances = (node.seenBy || []).map(item => `
+          <span class="pill">
+            <span style="width:7px;height:7px;border-radius:999px;background:${item.color};display:inline-block;margin-right:5px;"></span>
+            ${escapeHtml(item.name)}
+          </span>
+        `).join("");
+
+        const coords = validLatLon(node)
+          ? `<span class="mono">${Number(node.latitude).toFixed(6)}, ${Number(node.longitude).toFixed(6)}</span>`
+          : `<span class="muted">—</span>`;
+
+        return `
+          <tr>
+            <td>
+              <div class="node-name">${escapeHtml(displayNodeName(node))}</div>
+              <div class="muted mono">${escapeHtml(node.id || "—")}</div>
+            </td>
+            <td>${instances || "—"}</td>
+            <td>${formatAge(node._lastHeardMs)}</td>
+            <td><span class="mono">${node.rssi ?? "—"} / ${node.snr ?? "—"}</span></td>
+            <td><span class="mono">${node.hopsUsed ?? "—"} / ${node.hopStart ?? node.hopLimit ?? "—"}</span></td>
+            <td>${coords}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderAll() {
+      renderInstances();
+      renderStats();
+      renderMarkers();
+      renderNodeTable();
+    }
+
+    async function fetchJson(instance, path, timeoutMs = 7000) {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(apiUrl(instance, path), {
+          headers: authHeaders(instance),
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return await res.json();
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
+    async function refreshInstance(instance) {
+      const rt = getRuntime(instance.id);
+      try {
+        rt.status = "warn";
+        rt.lastError = null;
+        renderAll();
+
+        const [health, status, nodesPayload] = await Promise.allSettled([
+          fetchJson(instance, "/api/health"),
+          fetchJson(instance, "/api/status"),
+          fetchJson(instance, "/api/nodes"),
+        ]);
+
+        if (health.status === "fulfilled") rt.health = health.value;
+        if (status.status === "fulfilled") rt.statusData = status.value;
+
+        if (nodesPayload.status === "fulfilled") {
+          const nodes = normalizeNodesPayload(nodesPayload.value);
+          for (const node of nodes) {
+            upsertNode(node, instance);
+          }
+        }
+
+        rt.status = "online";
+        rt.lastEvent = `refresh ok`;
+        log(`${instance.name}: refresh ok`);
+      } catch (err) {
+        rt.status = "offline";
+        rt.lastError = `refresh error: ${err.message}`;
+        log(`${instance.name}: refresh error: ${err.message}`);
+      } finally {
+        renderAll();
+      }
+    }
+
+    function connectLive(instance) {
+      disconnectLive(instance);
+
+      const rt = getRuntime(instance.id);
+      try {
+        const socket = new WebSocket(wsUrl(instance));
+        state.sockets.set(instance.id, socket);
+        rt.status = "warn";
+        rt.lastEvent = "connessione live...";
+        renderAll();
+
+        socket.addEventListener("open", () => {
+          rt.status = "online";
+          rt.connectedAt = nowIso();
+          rt.lastEvent = "live connesso";
+          log(`${instance.name}: live connesso`);
+          renderAll();
+        });
+
+        socket.addEventListener("message", (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            rt.lastEvent = msg.type || "evento live";
+
+            if (msg.type === "hello") {
+              rt.status = "online";
+            }
+
+            if (msg.type === "node_update" && msg.data) {
+              upsertNode(msg.data, instance);
+            }
+
+            if (msg.type === "packet_rx" && msg.data) {
+              rt.packetCount += 1;
+              const packet = msg.data;
+              if (packet.fromId || packet.from) {
+                upsertNode({
+                  id: packet.fromId,
+                  num: packet.from,
+                  lastHeard: packet.rxTime,
+                  lastHeardSec: packet.rxTimeSec,
+                  rssi: packet.rssi,
+                  snr: packet.snr,
+                  hopLimit: packet.hopLimit,
+                  hopStart: packet.hopStart,
+                  hopsUsed: packet.hopsUsed,
+                }, instance);
+              }
+            }
+
+            if (msg.type === "message_rx") {
+              rt.messageCount += 1;
+            }
+
+            renderAll();
+          } catch (err) {
+            rt.lastError = `parse WS: ${err.message}`;
+            renderAll();
+          }
+        });
+
+        socket.addEventListener("error", () => {
+          rt.status = "warn";
+          rt.lastError = "errore WebSocket";
+          log(`${instance.name}: errore WebSocket`);
+          renderAll();
+        });
+
+        socket.addEventListener("close", () => {
+          if (state.sockets.get(instance.id) === socket) {
+            state.sockets.delete(instance.id);
+          }
+          if (rt.status !== "offline") rt.status = "warn";
+          rt.lastEvent = "live chiuso";
+          log(`${instance.name}: live chiuso`);
+          renderAll();
+        });
+      } catch (err) {
+        rt.status = "offline";
+        rt.lastError = `live error: ${err.message}`;
+        log(`${instance.name}: live error: ${err.message}`);
+        renderAll();
+      }
+    }
+
+    function disconnectLive(instance) {
+      const socket = state.sockets.get(instance.id);
+      if (socket) {
+        state.sockets.delete(instance.id);
+        try { socket.close(); } catch {}
+      }
+      const rt = getRuntime(instance.id);
+      if (rt.status === "online") rt.status = "warn";
+      rt.lastEvent = "live disconnesso";
+      renderAll();
+    }
+
+    function removeInstance(instance) {
+      disconnectLive(instance);
+      state.instances = state.instances.filter(item => item.id !== instance.id);
+      state.instanceRuntime.delete(instance.id);
+      state.nodesByInstance.delete(instance.id);
+      saveInstances();
+      log(`${instance.name}: rimossa`);
+      renderAll();
+    }
+
+    function exportConfig() {
+      const payload = {
+        version: 2,
+        exportedAt: nowIso(),
+        instances: state.instances,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `meshsense-dashboard-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function importConfig(file) {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      const instances = Array.isArray(payload) ? payload : payload.instances;
+      if (!Array.isArray(instances)) throw new Error("JSON senza array instances");
+
+      for (const current of state.instances) disconnectLive(current);
+
+      state.instances = instances.map((item, index) => ({
+        id: item.id || safeId(),
+        name: item.name || `Istanza ${index + 1}`,
+        baseUrl: normalizeBaseUrl(item.baseUrl || item.url || ""),
+        accessKey: item.accessKey || item.key || "",
+        color: item.color || COLORS[index % COLORS.length],
+        createdAt: item.createdAt || nowIso(),
+      })).filter(item => item.baseUrl);
+
+      state.instanceRuntime.clear();
+      state.nodesByInstance.clear();
+      saveInstances();
+      log(`Importate ${state.instances.length} istanze`);
+      renderAll();
+      refreshAll();
+      connectAll();
+    }
+
+    function refreshAll() {
+      for (const instance of state.instances) refreshInstance(instance);
+    }
+
+    function connectAll() {
+      for (const instance of state.instances) connectLive(instance);
+    }
+
+    el.form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const name = el.name.value.trim();
+      const baseUrl = normalizeBaseUrl(el.url.value);
+      const accessKey = el.key.value.trim();
+
+      if (!baseUrl) {
+        alert("Inserisci URL istanza.");
+        return;
+      }
+
+      const existing = state.instances.find(item => item.baseUrl === baseUrl);
+      if (existing) {
+        existing.name = name || existing.name;
+        existing.accessKey = accessKey;
+        log(`${existing.name}: aggiornata`);
+      } else {
+        const index = state.instances.length;
+        state.instances.push({
+          id: safeId(),
+          name: name || `Istanza ${index + 1}`,
+          baseUrl,
+          accessKey,
+          color: COLORS[index % COLORS.length],
+          createdAt: nowIso(),
+        });
+        log(`${name || baseUrl}: aggiunta`);
+      }
+
+      saveInstances();
+      el.name.value = "";
+      el.url.value = "";
+      el.key.value = "";
+      renderAll();
+
+      const instance = state.instances.find(item => item.baseUrl === baseUrl);
+      if (instance) {
+        refreshInstance(instance);
+        connectLive(instance);
+      }
+    });
+
+    el.btnRefreshAll.addEventListener("click", refreshAll);
+    el.btnFit.addEventListener("click", () => fitMap());
+    el.btnExport.addEventListener("click", exportConfig);
+    el.onlyMapped.addEventListener("change", renderAll);
+    el.merge.addEventListener("change", renderAll);
+
+    el.importFile.addEventListener("change", async () => {
+      const file = el.importFile.files && el.importFile.files[0];
+      if (!file) return;
+      try {
+        await importConfig(file);
+      } catch (err) {
+        alert("Import fallito: " + err.message);
+      } finally {
+        el.importFile.value = "";
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      for (const instance of state.instances) disconnectLive(instance);
+    });
+
+    initMap();
+    loadInstances();
+    renderAll();
+    fixMapSize();
+    refreshAll();
+    connectAll();
+
+    setInterval(() => {
+      renderStats();
+      renderMarkers();
+      renderNodeTable();
+    }, 15000);
+
+    setInterval(() => {
+      refreshAll();
+    }, 60000);
+  </script>
+</body>
+</html>
