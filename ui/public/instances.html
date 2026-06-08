@@ -909,17 +909,17 @@
     }
 
     .node-pin.meshsense-local {
-      width: 52px;
-      height: 52px;
-      transform: translate(-26px, -26px);
-      font-size: 13px;
+      width: 42px;
+      height: 42px;
+      transform: translate(-21px, -21px);
+      font-size: 12px;
       border-color: rgba(10, 20, 13, 0.95);
       box-shadow:
         0 2px 0 rgba(255,255,255,0.42) inset,
         0 0 0 3px #ffffff,
-        0 0 0 7px rgba(103, 232, 154, 0.36),
-        0 12px 28px rgba(0,0,0,0.48),
-        0 0 44px rgba(103, 232, 154, 0.65);
+        0 0 0 6px rgba(103, 232, 154, 0.34),
+        0 10px 24px rgba(0,0,0,0.44),
+        0 0 34px rgba(103, 232, 154, 0.55);
       z-index: 900 !important;
     }
 
@@ -942,7 +942,7 @@
     }
 
     .node-pin.meshsense-local .node-label {
-      max-width: 50px;
+      max-width: 44px;
     }
 
     .node-pin::before {
@@ -971,7 +971,8 @@
     }
 
     .trace-line {
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.45));
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.58));
+      pointer-events: auto;
     }
 
     @keyframes nodePulse {
@@ -1029,7 +1030,7 @@
         <div class="logo" aria-hidden="true"></div>
         <div>
           <h1>MeshSense Control</h1>
-          <div class="subtitle">Dashboard multi-istanza con nodi evidenziati, shortname e linee trace/RX</div>
+          <div class="subtitle">Dashboard multi-istanza con marker uniformi, nodi MeshSense evidenziati e linee RX/trace</div>
         </div>
       </div>
       <div class="actions">
@@ -1356,8 +1357,13 @@
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(state.map);
 
-      state.traceLayer = L.layerGroup().addTo(state.map);
-      state.nodeLayer = L.layerGroup().addTo(state.map);
+      state.map.createPane("tracePane");
+      state.map.getPane("tracePane").style.zIndex = 450;
+      state.map.createPane("nodePane");
+      state.map.getPane("nodePane").style.zIndex = 650;
+
+      state.traceLayer = L.layerGroup([], { pane: "tracePane" }).addTo(state.map);
+      state.nodeLayer = L.layerGroup([], { pane: "nodePane" }).addTo(state.map);
 
       attachMapResizeObserver();
       fixMapSize();
@@ -1453,9 +1459,11 @@
     }
 
     function colorForNode(node) {
+      // v4: colore uniforme, stile tipo LoRaItalia.
+      // Il colore della singola istanza resta nei dettagli, non sul marker,
+      // così la mappa non diventa un arcobaleno incomprensibile.
       if (isNodeLocalForAnyInstance(node)) return "#67e89a";
-      if (node.seenBy && node.seenBy.length > 1) return "#ffffff";
-      return node.instanceColor || "#67e89a";
+      return "#72d98b";
     }
 
     function nodeMarkerHtml(node) {
@@ -1470,15 +1478,13 @@
 
     function nodeMarkerIcon(node) {
       const local = isNodeLocalForAnyInstance(node);
-      const size = local ? [52, 52] : [42, 42];
-      const anchor = local ? [26, 26] : [21, 21];
       return L.divIcon({
         className: "meshsense-node-icon",
         html: nodeMarkerHtml(node),
-        iconSize: size,
-        iconAnchor: anchor,
-        popupAnchor: [0, local ? -30 : -24],
-        tooltipAnchor: [0, local ? -32 : -26],
+        iconSize: [42, 42],
+        iconAnchor: [21, 21],
+        popupAnchor: [0, -24],
+        tooltipAnchor: [0, -26],
       });
     }
 
@@ -1623,8 +1629,52 @@
       }
     }
 
+
+    function ensureSyntheticRxEdges() {
+      // v4: mostra sempre una linea RX tra ogni nodo MeshSense locale e i nodi
+      // con coordinate visti dalla stessa istanza. I traceroute veri restano
+      // separati e vengono disegnati quando il backend li espone già decodificati.
+      for (const key of Array.from(state.edges.keys())) {
+        const edge = state.edges.get(key);
+        if (edge && edge.kind === "rx-auto") state.edges.delete(key);
+      }
+
+      for (const instance of state.instances) {
+        const rt = getRuntime(instance.id);
+        const nodes = state.nodesByInstance.get(instance.id);
+        if (!nodes || !nodes.size) continue;
+
+        const localIds = new Set(rt.localNodeIds || []);
+        for (const node of nodes.values()) {
+          if (node._isMeshSenseLocal) localIds.add(node.id);
+        }
+
+        const localNodes = Array.from(localIds)
+          .map(id => nodes.get(id) || findNodeById(id, instance.id))
+          .filter(node => node && validLatLon(node));
+
+        if (!localNodes.length) continue;
+
+        const mappedNodes = Array.from(nodes.values())
+          .filter(node => node && validLatLon(node) && !localIds.has(node.id));
+
+        for (const localNode of localNodes) {
+          for (const node of mappedNodes) {
+            addEdge("rx-auto", instance, [localNode.id, node.id], {
+              synthetic: true,
+              lastSeen: Date.now(),
+              rssi: node.rssi,
+              snr: node.snr,
+              hopsUsed: node.hopsUsed,
+            });
+          }
+        }
+      }
+    }
+
     function renderEdges() {
       if (!state.traceLayer) return;
+      ensureSyntheticRxEdges();
       const enabled = !el.lines || el.lines.checked;
       const alive = new Set();
       const ttl = 6 * 60 * 60 * 1000;
@@ -1638,7 +1688,7 @@
       rebuildMergedNodes();
 
       for (const [key, edge] of state.edges) {
-        if (Date.now() - edge.lastSeen > ttl) {
+        if (edge.kind !== "rx-auto" && Date.now() - edge.lastSeen > ttl) {
           state.edges.delete(key);
           continue;
         }
@@ -1649,11 +1699,15 @@
 
         const isTrace = edge.kind === "trace";
         const isPacket = edge.kind === "packet";
+        const isRxAuto = edge.kind === "rx-auto";
         const style = {
-          color: isTrace ? "#f97316" : (isPacket ? "#60a5fa" : edge.color || "#67e89a"),
-          weight: isTrace ? 4 : 2,
-          opacity: isTrace ? 0.88 : 0.42,
-          dashArray: isTrace ? null : "8 8",
+          pane: "tracePane",
+          color: isTrace ? "#ff7a1a" : (isPacket ? "#3b82f6" : "#111827"),
+          weight: isTrace ? 4 : (isRxAuto ? 2.5 : 2),
+          opacity: isTrace ? 0.92 : (isRxAuto ? 0.52 : 0.50),
+          dashArray: isTrace ? null : (isRxAuto ? "10 10" : "8 8"),
+          lineCap: "round",
+          lineJoin: "round",
           className: "trace-line",
         };
 
@@ -1669,7 +1723,7 @@
         const names = edge.ids.map(id => displayNodeName(findNodeById(id, edge.instanceId) || { id })).join(" → ");
         line.bindPopup(`
           <div class="popup">
-            <h3>${edge.kind === "trace" ? "Traceroute" : edge.kind === "packet" ? "Packet path" : "RX link"}</h3>
+            <h3>${edge.kind === "trace" ? "Traceroute" : edge.kind === "packet" ? "Packet path" : edge.kind === "rx-auto" ? "RX link automatico" : "RX link"}</h3>
             <div class="muted">${escapeHtml(edge.instanceName || "Istanza")}</div>
             <div style="margin-top:8px;" class="mono">${escapeHtml(names)}</div>
             <div style="margin-top:8px;" class="muted">${formatAge(edge.lastSeen)}</div>
@@ -1883,6 +1937,7 @@
             icon,
             riseOnHover: true,
             keyboard: false,
+            pane: "nodePane",
           });
           marker.addTo(state.nodeLayer);
           state.markers.set(key, marker);
