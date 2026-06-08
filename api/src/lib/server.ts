@@ -78,22 +78,15 @@ async function initSever() {
     wss.send('initState', State.getStateData(), { to: socket })
   })
 
-  // Enable CORS (https://stackoverflow.com/a/18311469)
+  // Enable configurable CORS for the UI and external dashboards.
   app.use(function (req, res, next) {
-    // Website you wish to allow to connect
-    res.setHeader('Access-Control-Allow-Origin', '*')
-
-    // Request methods you wish to allow
+    let corsOrigin = process.env.MESHSENSE_CORS_ORIGIN || process.env.API_CORS_ORIGIN || '*'
+    res.setHeader('Access-Control-Allow-Origin', corsOrigin)
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE')
+    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,authorization')
+    res.setHeader('Access-Control-Allow-Credentials', corsOrigin == '*' ? 'false' : 'true')
 
-    // Request headers you wish to allow
-    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type')
-
-    // Set to true if you need the website to include cookies in the requests sent
-    // to the API (e.g. in case you use sessions)
-    res.setHeader('Access-Control-Allow-Credentials', 1)
-
-    // Pass to next layer of middleware
+    if (req.method == 'OPTIONS') return res.sendStatus(204)
     next()
   })
 
