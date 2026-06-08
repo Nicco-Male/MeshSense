@@ -1030,7 +1030,7 @@
         <div class="logo" aria-hidden="true"></div>
         <div>
           <h1>MeshSense Control</h1>
-          <div class="subtitle">Dashboard multi-istanza con marker uniformi, nodi MeshSense evidenziati e linee RX/trace</div>
+          <div class="subtitle">Dashboard multi-istanza con marker uniformi, nodi MeshSense evidenziati e linee traceroute</div>
         </div>
       </div>
       <div class="actions">
@@ -1125,7 +1125,7 @@
               </label>
               <label class="toggle">
                 <input type="checkbox" id="toggleLines" checked />
-                Linee trace/RX
+                Linee traceroute
               </label>
               <button class="btn" id="btnCenterLocal" type="button">Centra MeshSense</button>
             </div>
@@ -1554,127 +1554,59 @@
       return state.mergedNodes.get(clean) || null;
     }
 
-    function extractRouteIds(packet) {
-      const candidates = [
-        packet.route,
-        packet.routes,
-        packet.traceRoute,
-        packet.traceroute,
-        packet.trace,
-        packet.path,
-        packet.hops,
-        packet.via,
-        packet.routeNodes,
-        packet.decodedRoute,
-        packet.raw?.route,
-        packet.raw?.traceRoute,
-        packet.raw?.decodedRoute,
-        packet.raw?.message?.route,
-      ].filter(Boolean);
-
-      function normalizeRouteArray(value) {
-        if (!value) return [];
-        if (Array.isArray(value)) {
-          return value.map(item => {
-            if (typeof item === "string" || typeof item === "number") return normalizeNodeId(item);
-            if (item && typeof item === "object") {
-              return normalizeNodeId(item.id || item.nodeId || item.fromId || item.num || item.nodeNum || item.node || item.router);
-            }
-            return "";
-          }).filter(Boolean);
-        }
-        if (typeof value === "object") {
-          const arr = value.nodes || value.path || value.hops || value.route || value.via;
-          return normalizeRouteArray(arr);
-        }
-        return [];
+    function normalizeRouteArray(value) {
+      if (!value) return [];
+      if (Array.isArray(value)) {
+        return value.map(item => {
+          if (typeof item === "string" || typeof item === "number") return normalizeNodeId(item);
+          if (item && typeof item === "object") {
+            return normalizeNodeId(item.id || item.nodeId || item.num || item.nodeNum || item.node);
+          }
+          return "";
+        }).filter(Boolean);
       }
-
-      for (const candidate of candidates) {
-        const route = normalizeRouteArray(candidate);
-        if (route.length >= 2) return route;
+      if (typeof value === "object") {
+        return normalizeRouteArray(value.nodes || value.route);
       }
       return [];
     }
 
-    function processPacketEdges(packet, instance) {
-      const route = extractRouteIds(packet);
-      if (route.length >= 2) {
-        addEdge("trace", instance, route, {
-          packetId: packet.id,
-          hopsUsed: packet.hopsUsed,
-          hopStart: packet.hopStart,
-          hopLimit: packet.hopLimit,
-        });
-        return;
-      }
-
-      const fromId = normalizeNodeId(packet.fromId || packet.from);
-      const toId = normalizeNodeId(packet.toId || packet.to);
-      const rt = getRuntime(instance.id);
-
-      if (fromId && toId && toId !== "!ffffffff") {
-        addEdge("packet", instance, [fromId, toId], { packetId: packet.id });
-        return;
-      }
-
-      const localIds = Array.from(rt.localNodeIds || []);
-      if (fromId && localIds.length && !localIds.includes(fromId)) {
-        addEdge("rx", instance, [localIds[0], fromId], {
-          packetId: packet.id,
-          rssi: packet.rssi,
-          snr: packet.snr,
-          hopsUsed: packet.hopsUsed,
-        });
-      }
-    }
-
-
-    function ensureSyntheticRxEdges() {
-      // v4: mostra sempre una linea RX tra ogni nodo MeshSense locale e i nodi
-      // con coordinate visti dalla stessa istanza. I traceroute veri restano
-      // separati e vengono disegnati quando il backend li espone già decodificati.
-      for (const key of Array.from(state.edges.keys())) {
-        const edge = state.edges.get(key);
-        if (edge && edge.kind === "rx-auto") state.edges.delete(key);
-      }
-
-      for (const instance of state.instances) {
-        const rt = getRuntime(instance.id);
-        const nodes = state.nodesByInstance.get(instance.id);
-        if (!nodes || !nodes.size) continue;
-
-        const localIds = new Set(rt.localNodeIds || []);
-        for (const node of nodes.values()) {
-          if (node._isMeshSenseLocal) localIds.add(node.id);
-        }
-
-        const localNodes = Array.from(localIds)
-          .map(id => nodes.get(id) || findNodeById(id, instance.id))
-          .filter(node => node && validLatLon(node));
-
-        if (!localNodes.length) continue;
-
-        const mappedNodes = Array.from(nodes.values())
-          .filter(node => node && validLatLon(node) && !localIds.has(node.id));
-
-        for (const localNode of localNodes) {
-          for (const node of mappedNodes) {
-            addEdge("rx-auto", instance, [localNode.id, node.id], {
-              synthetic: true,
-              lastSeen: Date.now(),
-              rssi: node.rssi,
-              snr: node.snr,
-              hopsUsed: node.hopsUsed,
+    function extractTraceRoutes(packet) {
+      const routes = [];
+      if (Array.isArray(packet.traceRoutes)) {
+        for (const traceRoute of packet.traceRoutes) {
+          const nodes = normalizeRouteArray(traceRoute?.nodes);
+          if (nodes.length >= 2) {
+            routes.push({
+              direction: traceRoute.direction || "towards",
+              nodes,
+              snr: Array.isArray(traceRoute.snr) ? traceRoute.snr : [],
             });
           }
         }
       }
+
+      if (!routes.length) {
+        const nodes = normalizeRouteArray(packet.traceRoute);
+        if (nodes.length >= 2) routes.push({ direction: "towards", nodes, snr: [] });
+      }
+
+      return routes;
     }
+
+    function processPacketEdges(packet, instance) {
+      for (const route of extractTraceRoutes(packet)) {
+        addEdge("trace", instance, route.nodes, {
+          packetId: packet.id,
+          direction: route.direction,
+          snr: route.snr,
+        });
+      }
+    }
+
 
     function renderEdges() {
       if (!state.traceLayer) return;
-      ensureSyntheticRxEdges();
       const enabled = !el.lines || el.lines.checked;
       const alive = new Set();
       const ttl = 6 * 60 * 60 * 1000;
@@ -1688,7 +1620,7 @@
       rebuildMergedNodes();
 
       for (const [key, edge] of state.edges) {
-        if (edge.kind !== "rx-auto" && Date.now() - edge.lastSeen > ttl) {
+        if (Date.now() - edge.lastSeen > ttl) {
           state.edges.delete(key);
           continue;
         }
@@ -1698,14 +1630,12 @@
         alive.add(key);
 
         const isTrace = edge.kind === "trace";
-        const isPacket = edge.kind === "packet";
-        const isRxAuto = edge.kind === "rx-auto";
         const style = {
           pane: "tracePane",
-          color: isTrace ? "#ff7a1a" : (isPacket ? "#3b82f6" : "#111827"),
-          weight: isTrace ? 4 : (isRxAuto ? 2.5 : 2),
-          opacity: isTrace ? 0.92 : (isRxAuto ? 0.52 : 0.50),
-          dashArray: isTrace ? null : (isRxAuto ? "10 10" : "8 8"),
+          color: isTrace ? "#ff7a1a" : "#3b82f6",
+          weight: isTrace ? 4 : 2,
+          opacity: isTrace ? 0.92 : 0.50,
+          dashArray: isTrace ? null : "8 8",
           lineCap: "round",
           lineJoin: "round",
           className: "trace-line",
@@ -1723,7 +1653,7 @@
         const names = edge.ids.map(id => displayNodeName(findNodeById(id, edge.instanceId) || { id })).join(" → ");
         line.bindPopup(`
           <div class="popup">
-            <h3>${edge.kind === "trace" ? "Traceroute" : edge.kind === "packet" ? "Packet path" : edge.kind === "rx-auto" ? "RX link automatico" : "RX link"}</h3>
+            <h3>${edge.kind === "trace" ? "Traceroute" : "Packet path"}</h3>
             <div class="muted">${escapeHtml(edge.instanceName || "Istanza")}</div>
             <div style="margin-top:8px;" class="mono">${escapeHtml(names)}</div>
             <div style="margin-top:8px;" class="muted">${formatAge(edge.lastSeen)}</div>
