@@ -1383,8 +1383,48 @@
       return node.id || node.fromId || (node.num ? `!${Number(node.num).toString(16).padStart(8, "0")}` : "");
     }
 
+    function firstTextValue(...values) {
+      for (const value of values) {
+        if (value === null || value === undefined) continue;
+        const text = String(value).trim();
+        if (text) return text;
+      }
+      return "";
+    }
+
+    function nodeNames(node) {
+      const raw = node?.raw || {};
+      return {
+        shortName: firstTextValue(
+          node?.shortName,
+          node?.shortname,
+          node?.short_name,
+          node?.user?.shortName,
+          node?.data?.user?.shortName,
+          raw?.user?.shortName,
+          raw?.data?.user?.shortName
+        ),
+        longName: firstTextValue(
+          node?.longName,
+          node?.longname,
+          node?.long_name,
+          node?.user?.longName,
+          node?.data?.user?.longName,
+          raw?.user?.longName,
+          raw?.data?.user?.longName
+        ),
+      };
+    }
+
+    function meshtasticIdSuffix(node) {
+      const id = normalizeNodeId(node?.id || node?.fromId || node?.num);
+      if (id) return id.slice(-4).toUpperCase();
+      return "?";
+    }
+
     function displayNodeName(node) {
-      return node.longName || node.shortName || node.id || node.fromId || String(node.num || "Sconosciuto");
+      const names = nodeNames(node);
+      return names.longName || names.shortName || node?.id || node?.fromId || String(node?.num || "Sconosciuto");
     }
 
 
@@ -1400,9 +1440,10 @@
     }
 
     function shortNodeLabel(node) {
-      const raw = node.shortName || node.shortname || node.id || node.fromId || "?";
-      if (raw.startsWith("!")) return raw.slice(-4).toUpperCase();
-      return String(raw).trim().slice(0, 5) || "?";
+      const names = nodeNames(node);
+      const label = names.shortName || names.longName;
+      if (label) return label.slice(0, 5);
+      return meshtasticIdSuffix(node);
     }
 
     function isNodeLocalForAnyInstance(node) {
@@ -1702,10 +1743,13 @@
     }
 
     function normalizeNode(raw, instance) {
-      const node = { ...raw };
+      const node = { ...raw, raw };
       const id = nodeKey(node);
       if (!id) return null;
+      const names = nodeNames(node);
       node.id = id;
+      node.longName = names.longName || node.longName;
+      node.shortName = names.shortName || node.shortName;
       node.instanceId = instance.id;
       node.instanceName = instance.name;
       node.instanceColor = instance.color;
