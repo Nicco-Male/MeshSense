@@ -7,10 +7,13 @@ import {
   normalizeDestinationId,
   normalizeNodeId,
   normalizePacket,
+  getCurrentNodeSnapshot,
   normalizeRadioMetrics,
+  runtimeStore,
   unixSecondsToIso,
   type NormalizedPacket
 } from './publicApi'
+import { nodes } from '../vars'
 
 assert.equal(normalizeNodeId(0x1234abcd), '!1234abcd')
 assert.equal(normalizeNodeId(1), '!00000001')
@@ -83,6 +86,49 @@ assert.deepEqual(traceroutePacket.traceRoutes, [
   { direction: 'back', nodes: ['!00000002'], snr: [3.5] }
 ])
 assert.deepEqual(traceroutePacket.traceRoute, ['!1234abcd', '!00000001'])
+
+
+runtimeStore.nodes.clear()
+runtimeStore.nodes.set(0x1234abcd, {
+  num: 0x1234abcd,
+  id: '!1234abcd',
+  shortName: 'RT',
+  latitude: 45.1,
+  longitude: 9.1,
+  lastHeard: unixSecondsToIso(1000),
+  lastHeardSec: 1000,
+  rssi: -90
+})
+nodes.set([
+  {
+    num: 0x1234abcd,
+    lastHeard: 900,
+    snr: 7,
+    user: { id: '!1234abcd', longName: 'State Long', shortName: 'ST', role: 1 },
+    position: { latitudeI: 451234567, longitudeI: 91234567 },
+    trace: { route: [0x1234abcd, 1] }
+  } as any,
+  {
+    num: 2,
+    lastHeard: 2000,
+    user: { id: '!00000002', longName: 'Newest', shortName: 'NW' }
+  } as any
+])
+const snapshot = getCurrentNodeSnapshot()
+assert.deepEqual(snapshot.map((node) => node.id), ['!00000002', '!1234abcd'])
+assert.equal(snapshot.length, 2)
+assert.equal(snapshot[1].longName, 'State Long')
+assert.equal(snapshot[1].shortName, 'ST')
+assert.equal(snapshot[1].lastHeardSec, 1000)
+assert.equal(snapshot[1].rssi, -90)
+assert.equal(snapshot[1].snr, 7)
+assert.equal(snapshot[1].latitude, 45.1234567)
+assert.equal(snapshot[1].longitude, 9.1234567)
+assert.deepEqual(snapshot[1].trace, { route: [0x1234abcd, 1] })
+assert.equal(runtimeStore.nodesSeen, 2)
+nodes.set([] as any)
+runtimeStore.nodes.clear()
+runtimeStore.nodesSeen = 0
 
 const packets: NormalizedPacket[] = [
   { id: 1, rxTime: unixSecondsToIso(100), rxTimeSec: 100, from: 10, to: 20, portnum: 1, raw: {} },

@@ -19,6 +19,9 @@ export type NormalizedNode = {
   latitude?: number
   longitude?: number
   role?: string | number
+  user?: { longName?: string; shortName?: string; [key: string]: any }
+  position?: any
+  trace?: any
 }
 
 export type NormalizedTraceRoute = {
@@ -308,7 +311,10 @@ export function normalizeNode(node: Partial<NodeInfo> | any): NormalizedNode {
     rssi: numeric(safeNode.rssi ?? safeNode.rxRssi) ?? null,
     latitude,
     longitude,
-    role: safeNode.user?.role ?? safeNode.role
+    role: safeNode.user?.role ?? safeNode.role,
+    user: safeNode.user,
+    position: safeNode.position,
+    trace: safeNode.trace
   })
 }
 
@@ -381,6 +387,86 @@ function filterMessages(messageList: NormalizedMessage[], filters: Pick<PacketFi
     .slice(-limit)
 }
 
+
+function nodeMergeKey(node: NormalizedNode): string | undefined {
+  if (node.num !== undefined) return `num:${node.num}`
+  if (node.id) return `id:${node.id}`
+  return undefined
+}
+
+function mergeDefined<T extends Record<string, any>>(previous: T | undefined, next: T | undefined): T | undefined {
+  if (!previous) return next
+  if (!next) return previous
+  return { ...previous, ...compact(next) }
+}
+
+function mergeNormalizedNode(previous: NormalizedNode | undefined, next: NormalizedNode): NormalizedNode {
+  if (!previous) return next
+
+  let previousLastHeard = previous.lastHeardSec ?? parseTime(previous.lastHeard)
+  let nextLastHeard = next.lastHeardSec ?? parseTime(next.lastHeard)
+  let newerLastHeard = nextLastHeard !== undefined && (previousLastHeard === undefined || nextLastHeard >= previousLastHeard)
+
+  return compact({
+    ...previous,
+    ...next,
+    num: next.num ?? previous.num,
+    id: next.id ?? previous.id,
+    longName: next.longName || previous.longName,
+    shortName: next.shortName || previous.shortName,
+    user: mergeDefined(previous.user, next.user),
+    position: next.position ?? previous.position,
+    latitude: next.latitude ?? previous.latitude,
+    longitude: next.longitude ?? previous.longitude,
+    lastHeard: newerLastHeard ? next.lastHeard : previous.lastHeard,
+    lastHeardSec: newerLastHeard ? (nextLastHeard ?? null) : (previousLastHeard ?? previous.lastHeardSec ?? null),
+    rssi: next.rssi ?? previous.rssi ?? null,
+    snr: next.snr ?? previous.snr ?? null,
+    role: next.role ?? previous.role,
+    trace: next.trace ?? previous.trace
+  })
+}
+
+function addMergedNode(
+  merged: Map<string, NormalizedNode>,
+  aliases: Map<string, string>,
+  node: NormalizedNode
+) {
+  let key = nodeMergeKey(node)
+  if (!key) return
+
+  let aliasKeys = [key]
+  if (node.num !== undefined) aliasKeys.push(`num:${node.num}`)
+  if (node.id) aliasKeys.push(`id:${node.id}`)
+
+  let existingKey = aliasKeys.map((alias) => aliases.get(alias)).find((alias): alias is string => !!alias) ?? key
+  let mergedNode = mergeNormalizedNode(merged.get(existingKey), node)
+  let finalKey = nodeMergeKey(mergedNode) ?? existingKey
+
+  if (finalKey !== existingKey) merged.delete(existingKey)
+  merged.set(finalKey, mergedNode)
+  aliases.set(finalKey, finalKey)
+  if (mergedNode.num !== undefined) aliases.set(`num:${mergedNode.num}`, finalKey)
+  if (mergedNode.id) aliases.set(`id:${mergedNode.id}`, finalKey)
+}
+
+export function getCurrentNodeSnapshot(): NormalizedNode[] {
+  let merged = new Map<string, NormalizedNode>()
+  let aliases = new Map<string, string>()
+
+  for (let node of runtimeStore.nodes.values()) addMergedNode(merged, aliases, node)
+  for (let node of nodes.value || []) addMergedNode(merged, aliases, normalizeNode(node))
+
+  runtimeStore.nodes.clear()
+  for (let node of merged.values()) {
+    let key = node.num ?? node.id
+    if (key !== undefined) runtimeStore.nodes.set(key, node)
+  }
+  runtimeStore.nodesSeen = runtimeStore.nodes.size
+
+  return Array.from(merged.values()).sort((a, b) => (b.lastHeardSec ?? 0) - (a.lastHeardSec ?? 0))
+}
+
 export function recordPacket(packet: MeshPacket | any) {
   try {
     let normalized = normalizePacket(packet)
@@ -401,11 +487,17 @@ export function recordNodeUpdate(node: Partial<NodeInfo> | any) {
     let normalized = normalizeNode(node)
     let key = normalized.num ?? normalized.id
     if (key === undefined) return normalized
-    let wasKnown = runtimeStore.nodes.has(key)
-    runtimeStore.nodes.set(key, { ...runtimeStore.nodes.get(key), ...normalized })
+    let existingEntry = Array.from(runtimeStore.nodes.entries()).find(([, current]) => {
+      if (normalized.num !== undefined && current.num === normalized.num) return true
+      if (normalized.id && current.id === normalized.id) return true
+      return false
+    })
+    let storeKey = existingEntry?.[0] ?? key
+    let wasKnown = existingEntry !== undefined
+    runtimeStore.nodes.set(storeKey, mergeNormalizedNode(existingEntry?.[1], normalized))
     runtimeStore.nodesSeen = runtimeStore.nodes.size
     if (!wasKnown) console.log('[api] node discovered', normalized.id ?? normalized.num)
-    publicApiEvents.emit('node_update', runtimeStore.nodes.get(key))
+    publicApiEvents.emit('node_update', runtimeStore.nodes.get(storeKey))
     return normalized
   } catch (e) {
     console.log('[api] normalization error node', String(e))
@@ -458,13 +550,7 @@ export function installPublicApi(app: Express, server: Server) {
   })
 
   app.get('/api/nodes', (_req, res) => {
-    let merged = new Map(runtimeStore.nodes)
-    for (let node of nodes.value || []) {
-      let normalized = normalizeNode(node)
-      let key = normalized.num ?? normalized.id
-      if (key !== undefined) merged.set(key, { ...merged.get(key), ...normalized })
-    }
-    res.json(Array.from(merged.values()))
+    res.json(getCurrentNodeSnapshot())
   })
 
   app.get('/api/packets', (req, res) => {
@@ -494,6 +580,9 @@ export function installPublicApi(app: Express, server: Server) {
     let remoteAddress = request.socket.remoteAddress
     console.log('[api] WebSocket client connected', remoteAddress)
     socket.send(JSON.stringify({ type: 'hello', ok: true, server: 'meshsense', time: new Date().toISOString() }))
+    for (let node of getCurrentNodeSnapshot()) {
+      socket.send(JSON.stringify({ type: 'node_update', data: node }))
+    }
 
     socket.on('close', () => console.log('[api] WebSocket client disconnected', remoteAddress))
     socket.on('error', (error) => console.log('[api] WebSocket error', remoteAddress, String(error)))
