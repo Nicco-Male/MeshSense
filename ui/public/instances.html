@@ -863,6 +863,123 @@
       display: block !important;
     }
 
+
+    .node-pin {
+      --node-color: #67e89a;
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      color: #06110b;
+      font-weight: 900;
+      font-size: 12px;
+      letter-spacing: -0.04em;
+      text-transform: uppercase;
+      background:
+        radial-gradient(circle at 34% 28%, rgba(255,255,255,0.95), rgba(255,255,255,0.25) 24%, transparent 25%),
+        linear-gradient(135deg, var(--node-color), color-mix(in srgb, var(--node-color), #07110d 28%));
+      border: 3px solid rgba(5, 13, 9, 0.82);
+      box-shadow:
+        0 2px 0 rgba(255,255,255,0.34) inset,
+        0 0 0 2px rgba(255,255,255,0.82),
+        0 10px 24px rgba(0,0,0,0.40),
+        0 0 24px color-mix(in srgb, var(--node-color), transparent 38%);
+      transform: translate(-21px, -21px);
+      user-select: none;
+      pointer-events: auto;
+      position: relative;
+    }
+
+    .node-pin.stale {
+      filter: saturate(0.75);
+      opacity: 0.68;
+    }
+
+    .node-pin.multi {
+      color: #07110d;
+      background:
+        radial-gradient(circle at 34% 28%, rgba(255,255,255,0.95), rgba(255,255,255,0.25) 24%, transparent 25%),
+        linear-gradient(135deg, #ffffff, var(--node-color));
+      box-shadow:
+        0 2px 0 rgba(255,255,255,0.42) inset,
+        0 0 0 3px rgba(255,255,255,0.95),
+        0 10px 24px rgba(0,0,0,0.45),
+        0 0 34px rgba(255,255,255,0.38);
+    }
+
+    .node-pin.meshsense-local {
+      width: 52px;
+      height: 52px;
+      transform: translate(-26px, -26px);
+      font-size: 13px;
+      border-color: rgba(10, 20, 13, 0.95);
+      box-shadow:
+        0 2px 0 rgba(255,255,255,0.42) inset,
+        0 0 0 3px #ffffff,
+        0 0 0 7px rgba(103, 232, 154, 0.36),
+        0 12px 28px rgba(0,0,0,0.48),
+        0 0 44px rgba(103, 232, 154, 0.65);
+      z-index: 900 !important;
+    }
+
+    .node-pin.meshsense-local::after {
+      content: "";
+      position: absolute;
+      inset: -9px;
+      border-radius: 999px;
+      border: 2px solid rgba(103, 232, 154, 0.52);
+      animation: nodePulse 1.9s ease-out infinite;
+      pointer-events: none;
+    }
+
+    .node-pin .node-label {
+      max-width: 44px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.42);
+    }
+
+    .node-pin.meshsense-local .node-label {
+      max-width: 50px;
+    }
+
+    .node-pin::before {
+      content: attr(data-kind);
+      position: absolute;
+      right: -5px;
+      top: -5px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 999px;
+      background: #0b1b13;
+      border: 1px solid rgba(255,255,255,0.76);
+      color: #dffdea;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      line-height: 16px;
+      letter-spacing: 0;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.38);
+    }
+
+    .node-pin.meshsense-local::before {
+      display: flex;
+    }
+
+    .trace-line {
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.45));
+    }
+
+    @keyframes nodePulse {
+      0% { transform: scale(0.78); opacity: 0.80; }
+      85% { transform: scale(1.42); opacity: 0; }
+      100% { transform: scale(1.42); opacity: 0; }
+    }
+
     @media (max-width: 1180px) {
       .layout {
         grid-template-columns: 1fr;
@@ -912,12 +1029,12 @@
         <div class="logo" aria-hidden="true"></div>
         <div>
           <h1>MeshSense Control</h1>
-          <div class="subtitle">Dashboard multi-istanza con mappa mondiale OpenStreetMap e nodi Meshtastic live</div>
+          <div class="subtitle">Dashboard multi-istanza con nodi evidenziati, shortname e linee trace/RX</div>
         </div>
       </div>
       <div class="actions">
         <button class="btn" id="btnRefreshAll">Refresh</button>
-        <button class="btn" id="btnFit">Fit mappa</button>
+        <button class="btn" id="btnFit">Fit tutti</button>
         <button class="btn" id="btnExport">Esporta JSON</button>
         <label class="btn" for="importFile">Importa JSON</label>
         <input id="importFile" type="file" accept="application/json,.json" hidden />
@@ -1005,6 +1122,11 @@
                 <input type="checkbox" id="toggleMerge" checked />
                 Unisci stesso nodo
               </label>
+              <label class="toggle">
+                <input type="checkbox" id="toggleLines" checked />
+                Linee trace/RX
+              </label>
+              <button class="btn" id="btnCenterLocal" type="button">Centra MeshSense</button>
             </div>
           </div>
           <div class="map-wrap">
@@ -1051,8 +1173,12 @@
       nodesByInstance: new Map(),
       mergedNodes: new Map(),
       markers: new Map(),
+      edges: new Map(),
+      edgeLines: new Map(),
       map: null,
       nodeLayer: null,
+      traceLayer: null,
+      initialCentered: false,
       logLines: [],
     };
 
@@ -1076,6 +1202,8 @@
       onlyMapped: document.getElementById("toggleOnlyMapped"),
       autoFit: document.getElementById("toggleAutoFit"),
       merge: document.getElementById("toggleMerge"),
+      lines: document.getElementById("toggleLines"),
+      btnCenterLocal: document.getElementById("btnCenterLocal"),
     };
 
     function nowIso() {
@@ -1183,6 +1311,7 @@
           lastEvent: null,
           lastError: null,
           connectedAt: null,
+          localNodeIds: new Set(),
         });
       }
       return state.instanceRuntime.get(instanceId);
@@ -1227,6 +1356,7 @@
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(state.map);
 
+      state.traceLayer = L.layerGroup().addTo(state.map);
       state.nodeLayer = L.layerGroup().addTo(state.map);
 
       attachMapResizeObserver();
@@ -1249,6 +1379,310 @@
 
     function displayNodeName(node) {
       return node.longName || node.shortName || node.id || node.fromId || String(node.num || "Sconosciuto");
+    }
+
+
+    function normalizeNodeId(value) {
+      if (value === null || value === undefined) return "";
+      if (typeof value === "number" && Number.isFinite(value)) return `!${value.toString(16).padStart(8, "0")}`;
+      const str = String(value).trim();
+      if (!str) return "";
+      if (/^![0-9a-f]{8}$/i.test(str)) return str.toLowerCase();
+      if (/^[0-9a-f]{8}$/i.test(str)) return `!${str.toLowerCase()}`;
+      if (/^\d+$/.test(str)) return `!${Number(str).toString(16).padStart(8, "0")}`;
+      return "";
+    }
+
+    function shortNodeLabel(node) {
+      const raw = node.shortName || node.shortname || node.id || node.fromId || "?";
+      if (raw.startsWith("!")) return raw.slice(-4).toUpperCase();
+      return String(raw).trim().slice(0, 5) || "?";
+    }
+
+    function isNodeLocalForAnyInstance(node) {
+      const id = normalizeNodeId(node.id || node.fromId || node.num);
+      if (!id) return false;
+      return (node.seenBy || []).some(item => {
+        const rt = getRuntime(item.id);
+        return rt.localNodeIds && rt.localNodeIds.has(id);
+      });
+    }
+
+    function markLocalNode(instance, rawId) {
+      const id = normalizeNodeId(rawId);
+      if (!id) return;
+      const rt = getRuntime(instance.id);
+      rt.localNodeIds.add(id);
+      const nodes = state.nodesByInstance.get(instance.id);
+      const node = nodes && nodes.get(id);
+      if (node) {
+        node._isMeshSenseLocal = true;
+      }
+    }
+
+    function inferLocalNodeIdsFromStatus(instance, data) {
+      const keys = /^(myNode|myNodeId|localNode|localNodeId|nodeId|nodeNum|nodeNumber|ownNode|ownNodeId|self|selfNode|radioNode|connectedNode)$/i;
+      const found = new Set();
+
+      function walk(value, key = "", depth = 0) {
+        if (depth > 5 || value === null || value === undefined) return;
+        if (typeof value === "string" || typeof value === "number") {
+          if (keys.test(key)) {
+            const id = normalizeNodeId(value);
+            if (id) found.add(id);
+          }
+          return;
+        }
+        if (Array.isArray(value)) {
+          for (const item of value.slice(0, 20)) walk(item, key, depth + 1);
+          return;
+        }
+        if (typeof value === "object") {
+          for (const [k, v] of Object.entries(value)) {
+            if (keys.test(k)) {
+              const direct = normalizeNodeId(v && typeof v === "object" ? (v.id || v.nodeId || v.num || v.nodeNum) : v);
+              if (direct) found.add(direct);
+            }
+            walk(v, k, depth + 1);
+          }
+        }
+      }
+
+      walk(data);
+      for (const id of found) markLocalNode(instance, id);
+    }
+
+    function colorForNode(node) {
+      if (isNodeLocalForAnyInstance(node)) return "#67e89a";
+      if (node.seenBy && node.seenBy.length > 1) return "#ffffff";
+      return node.instanceColor || "#67e89a";
+    }
+
+    function nodeMarkerHtml(node) {
+      const local = isNodeLocalForAnyInstance(node);
+      const stale = (Date.now() - (node._lastHeardMs || 0)) > 6 * 60 * 60 * 1000;
+      const multi = node.seenBy && node.seenBy.length > 1;
+      const color = colorForNode(node);
+      const cls = ["node-pin", local ? "meshsense-local" : "", stale ? "stale" : "", multi ? "multi" : ""].filter(Boolean).join(" ");
+      const kind = local ? "MS" : "";
+      return `<div class="${cls}" data-kind="${kind}" style="--node-color:${color}"><span class="node-label">${escapeHtml(shortNodeLabel(node))}</span></div>`;
+    }
+
+    function nodeMarkerIcon(node) {
+      const local = isNodeLocalForAnyInstance(node);
+      const size = local ? [52, 52] : [42, 42];
+      const anchor = local ? [26, 26] : [21, 21];
+      return L.divIcon({
+        className: "meshsense-node-icon",
+        html: nodeMarkerHtml(node),
+        iconSize: size,
+        iconAnchor: anchor,
+        popupAnchor: [0, local ? -30 : -24],
+        tooltipAnchor: [0, local ? -32 : -26],
+      });
+    }
+
+    function connectedMeshSenseNodes() {
+      rebuildMergedNodes();
+      const nodes = [];
+      for (const node of state.mergedNodes.values()) {
+        if (validLatLon(node) && isNodeLocalForAnyInstance(node)) nodes.push(node);
+      }
+      return nodes;
+    }
+
+    function centerOnMeshSenseNodes() {
+      const nodes = connectedMeshSenseNodes();
+      if (nodes.length) {
+        const bounds = nodes.map(node => [Number(node.latitude), Number(node.longitude)]);
+        fitMap(bounds, { maxZoom: 12 });
+        return true;
+      }
+      return false;
+    }
+
+    function maybeInitialCenter() {
+      if (state.initialCentered) return;
+      if (centerOnMeshSenseNodes()) {
+        state.initialCentered = true;
+        return;
+      }
+      const mapped = Array.from(state.mergedNodes.values()).filter(validLatLon);
+      if (mapped.length) {
+        state.initialCentered = true;
+        fitMap(mapped.map(node => [Number(node.latitude), Number(node.longitude)]), { maxZoom: 10 });
+      }
+    }
+
+    function edgeKey(kind, instanceId, ids) {
+      return `${kind}:${instanceId}:${ids.join(">")}`;
+    }
+
+    function addEdge(kind, instance, ids, meta = {}) {
+      const clean = ids.map(normalizeNodeId).filter(Boolean);
+      if (clean.length < 2) return;
+      const key = edgeKey(kind, instance.id, clean);
+      state.edges.set(key, {
+        key,
+        kind,
+        instanceId: instance.id,
+        instanceName: instance.name,
+        color: instance.color,
+        ids: clean,
+        lastSeen: Date.now(),
+        ...meta,
+      });
+    }
+
+    function findNodeById(id, instanceId = null) {
+      const clean = normalizeNodeId(id);
+      if (!clean) return null;
+      if (instanceId) {
+        const node = state.nodesByInstance.get(instanceId)?.get(clean);
+        if (node) return node;
+      }
+      for (const nodes of state.nodesByInstance.values()) {
+        const node = nodes.get(clean);
+        if (node && validLatLon(node)) return node;
+      }
+      return state.mergedNodes.get(clean) || null;
+    }
+
+    function extractRouteIds(packet) {
+      const candidates = [
+        packet.route,
+        packet.routes,
+        packet.traceRoute,
+        packet.traceroute,
+        packet.trace,
+        packet.path,
+        packet.hops,
+        packet.via,
+        packet.routeNodes,
+        packet.decodedRoute,
+        packet.raw?.route,
+        packet.raw?.traceRoute,
+        packet.raw?.decodedRoute,
+        packet.raw?.message?.route,
+      ].filter(Boolean);
+
+      function normalizeRouteArray(value) {
+        if (!value) return [];
+        if (Array.isArray(value)) {
+          return value.map(item => {
+            if (typeof item === "string" || typeof item === "number") return normalizeNodeId(item);
+            if (item && typeof item === "object") {
+              return normalizeNodeId(item.id || item.nodeId || item.fromId || item.num || item.nodeNum || item.node || item.router);
+            }
+            return "";
+          }).filter(Boolean);
+        }
+        if (typeof value === "object") {
+          const arr = value.nodes || value.path || value.hops || value.route || value.via;
+          return normalizeRouteArray(arr);
+        }
+        return [];
+      }
+
+      for (const candidate of candidates) {
+        const route = normalizeRouteArray(candidate);
+        if (route.length >= 2) return route;
+      }
+      return [];
+    }
+
+    function processPacketEdges(packet, instance) {
+      const route = extractRouteIds(packet);
+      if (route.length >= 2) {
+        addEdge("trace", instance, route, {
+          packetId: packet.id,
+          hopsUsed: packet.hopsUsed,
+          hopStart: packet.hopStart,
+          hopLimit: packet.hopLimit,
+        });
+        return;
+      }
+
+      const fromId = normalizeNodeId(packet.fromId || packet.from);
+      const toId = normalizeNodeId(packet.toId || packet.to);
+      const rt = getRuntime(instance.id);
+
+      if (fromId && toId && toId !== "!ffffffff") {
+        addEdge("packet", instance, [fromId, toId], { packetId: packet.id });
+        return;
+      }
+
+      const localIds = Array.from(rt.localNodeIds || []);
+      if (fromId && localIds.length && !localIds.includes(fromId)) {
+        addEdge("rx", instance, [localIds[0], fromId], {
+          packetId: packet.id,
+          rssi: packet.rssi,
+          snr: packet.snr,
+          hopsUsed: packet.hopsUsed,
+        });
+      }
+    }
+
+    function renderEdges() {
+      if (!state.traceLayer) return;
+      const enabled = !el.lines || el.lines.checked;
+      const alive = new Set();
+      const ttl = 6 * 60 * 60 * 1000;
+
+      if (!enabled) {
+        state.traceLayer.clearLayers();
+        state.edgeLines.clear();
+        return;
+      }
+
+      rebuildMergedNodes();
+
+      for (const [key, edge] of state.edges) {
+        if (Date.now() - edge.lastSeen > ttl) {
+          state.edges.delete(key);
+          continue;
+        }
+
+        const latlngs = edge.ids.map(id => findNodeById(id, edge.instanceId)).filter(validLatLon).map(node => [Number(node.latitude), Number(node.longitude)]);
+        if (latlngs.length < 2) continue;
+        alive.add(key);
+
+        const isTrace = edge.kind === "trace";
+        const isPacket = edge.kind === "packet";
+        const style = {
+          color: isTrace ? "#f97316" : (isPacket ? "#60a5fa" : edge.color || "#67e89a"),
+          weight: isTrace ? 4 : 2,
+          opacity: isTrace ? 0.88 : 0.42,
+          dashArray: isTrace ? null : "8 8",
+          className: "trace-line",
+        };
+
+        let line = state.edgeLines.get(key);
+        if (!line) {
+          line = L.polyline(latlngs, style).addTo(state.traceLayer);
+          state.edgeLines.set(key, line);
+        } else {
+          line.setLatLngs(latlngs);
+          line.setStyle(style);
+        }
+
+        const names = edge.ids.map(id => displayNodeName(findNodeById(id, edge.instanceId) || { id })).join(" → ");
+        line.bindPopup(`
+          <div class="popup">
+            <h3>${edge.kind === "trace" ? "Traceroute" : edge.kind === "packet" ? "Packet path" : "RX link"}</h3>
+            <div class="muted">${escapeHtml(edge.instanceName || "Istanza")}</div>
+            <div style="margin-top:8px;" class="mono">${escapeHtml(names)}</div>
+            <div style="margin-top:8px;" class="muted">${formatAge(edge.lastSeen)}</div>
+          </div>
+        `);
+      }
+
+      for (const [key, line] of state.edgeLines) {
+        if (!alive.has(key)) {
+          state.traceLayer.removeLayer(line);
+          state.edgeLines.delete(key);
+        }
+      }
     }
 
     function lastHeardMs(node) {
@@ -1334,6 +1768,7 @@
       };
       merged._lastHeardMs = Math.max(lastHeardMs(merged), prev._lastHeardMs || 0);
       merged._hasPosition = validLatLon(merged);
+      merged._isMeshSenseLocal = getRuntime(instance.id).localNodeIds.has(merged.id) || prev._isMeshSenseLocal || false;
       nodes.set(merged.id, merged);
 
       const rt = getRuntime(instance.id);
@@ -1410,7 +1845,7 @@
 
       return `
         <div class="popup">
-          <h3>${escapeHtml(displayNodeName(node))}</h3>
+          <h3>${escapeHtml(displayNodeName(node))}${isNodeLocalForAnyInstance(node) ? " · MeshSense" : ""}</h3>
           <div class="muted mono">${escapeHtml(node.id || "—")}</div>
           <div style="margin-top:6px;">${seen}</div>
           <div class="popup-grid">
@@ -1440,36 +1875,24 @@
 
         const lat = Number(node.latitude);
         const lon = Number(node.longitude);
-        const color = (node.seenBy && node.seenBy.length > 1) ? "#ffffff" : (node.instanceColor || "#67e89a");
-        const opacity = ageOpacity(node._lastHeardMs);
-        const radius = (node.role === 1 || node.role === 2 || node.role === 11 || node.role === 12) ? 8 : 6;
 
         let marker = state.markers.get(key);
+        const icon = nodeMarkerIcon(node);
         if (!marker) {
-          marker = L.circleMarker([lat, lon], {
-            radius,
-            color,
-            weight: node.seenBy && node.seenBy.length > 1 ? 3 : 2,
-            fillColor: color,
-            fillOpacity: opacity,
-            opacity: Math.min(1, opacity + 0.1),
+          marker = L.marker([lat, lon], {
+            icon,
+            riseOnHover: true,
+            keyboard: false,
           });
           marker.addTo(state.nodeLayer);
           state.markers.set(key, marker);
         } else {
           marker.setLatLng([lat, lon]);
-          marker.setStyle({
-            radius,
-            color,
-            weight: node.seenBy && node.seenBy.length > 1 ? 3 : 2,
-            fillColor: color,
-            fillOpacity: opacity,
-            opacity: Math.min(1, opacity + 0.1),
-          });
+          marker.setIcon(icon);
         }
 
         marker.bindPopup(markerPopup(node));
-        marker.bindTooltip(`${displayNodeName(node)} · ${node.id}`, { direction: "top", sticky: true });
+        marker.bindTooltip(`${shortNodeLabel(node)} · ${displayNodeName(node)} · ${node.id}`, { direction: "top", sticky: true });
         bounds.push([lat, lon]);
       }
 
@@ -1480,12 +1903,15 @@
         }
       }
 
+      renderEdges();
+      maybeInitialCenter();
+
       if (el.autoFit.checked && bounds.length) {
         fitMap(bounds);
       }
     }
 
-    function fitMap(boundsInput) {
+    function fitMap(boundsInput, options = {}) {
       fixMapSize();
       const bounds = boundsInput || Array.from(state.mergedNodes.values())
         .filter(validLatLon)
@@ -1501,7 +1927,7 @@
         return;
       }
 
-      state.map.fitBounds(bounds, { padding: [45, 45], maxZoom: 13 });
+      state.map.fitBounds(bounds, { padding: [45, 45], maxZoom: options.maxZoom ?? 13 });
     }
 
     function escapeHtml(value) {
@@ -1606,7 +2032,7 @@
         return `
           <tr>
             <td>
-              <div class="node-name">${escapeHtml(displayNodeName(node))}</div>
+              <div class="node-name">${escapeHtml(displayNodeName(node))}${isNodeLocalForAnyInstance(node) ? ' <span class="pill">MeshSense</span>' : ''}</div>
               <div class="muted mono">${escapeHtml(node.id || "—")}</div>
             </td>
             <td>${instances || "—"}</td>
@@ -1655,7 +2081,10 @@
         ]);
 
         if (health.status === "fulfilled") rt.health = health.value;
-        if (status.status === "fulfilled") rt.statusData = status.value;
+        if (status.status === "fulfilled") {
+          rt.statusData = status.value;
+          inferLocalNodeIdsFromStatus(instance, status.value);
+        }
 
         if (nodesPayload.status === "fulfilled") {
           const nodes = normalizeNodesPayload(nodesPayload.value);
@@ -1712,6 +2141,11 @@
               rt.packetCount += 1;
               const packet = msg.data;
               if (packet.fromId || packet.from) {
+                const fromId = normalizeNodeId(packet.fromId || packet.from);
+                const toId = normalizeNodeId(packet.toId || packet.to);
+                if (fromId && toId && fromId === toId && packet.hasRadioMetrics === false) {
+                  markLocalNode(instance, fromId);
+                }
                 upsertNode({
                   id: packet.fromId,
                   num: packet.from,
@@ -1723,6 +2157,7 @@
                   hopStart: packet.hopStart,
                   hopsUsed: packet.hopsUsed,
                 }, instance);
+                processPacketEdges(packet, instance);
               }
             }
 
@@ -1818,6 +2253,7 @@
       state.instanceRuntime.clear();
       state.nodesByInstance.clear();
       saveInstances();
+      state.initialCentered = false;
       log(`Importate ${state.instances.length} istanze`);
       renderAll();
       refreshAll();
@@ -1862,6 +2298,7 @@
       }
 
       saveInstances();
+      state.initialCentered = false;
       el.name.value = "";
       el.url.value = "";
       el.key.value = "";
@@ -1876,9 +2313,11 @@
 
     el.btnRefreshAll.addEventListener("click", refreshAll);
     el.btnFit.addEventListener("click", () => fitMap());
+    el.btnCenterLocal.addEventListener("click", () => centerOnMeshSenseNodes() || fitMap());
     el.btnExport.addEventListener("click", exportConfig);
     el.onlyMapped.addEventListener("change", renderAll);
     el.merge.addEventListener("change", renderAll);
+    el.lines.addEventListener("change", renderAll);
 
     el.importFile.addEventListener("change", async () => {
       const file = el.importFile.files && el.importFile.files[0];
