@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { create, toBinary } from '@bufbuild/protobuf'
-import * as Protobuf from '@meshtastic/protobufs'
+import { Protobuf } from '../../meshtastic-js/dist'
 import {
   calculateHopsUsed,
   filterPackets,

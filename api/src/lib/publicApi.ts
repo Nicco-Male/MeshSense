@@ -4,7 +4,7 @@ import WebSocket, { WebSocketServer } from 'ws'
 import EventEmitter from 'eventemitter3'
 import { parse } from 'url'
 import { fromBinary } from '@bufbuild/protobuf'
-import * as Protobuf from '@meshtastic/protobufs'
+import { Protobuf } from '../../meshtastic-js/dist'
 import { address, channels, connectionStatus, nodes, type Channel, type MeshPacket, type NodeInfo } from '../vars'
 
 export type NormalizedNode = {
@@ -207,15 +207,11 @@ function normalizeScaledSnr(snr?: unknown[]): number[] {
 function decodeRouteDiscovery(packet: any, portnum?: number | string): NormalizedRouteDiscovery | undefined {
   if (numeric(portnum) != 70) return undefined
 
-  let routeDiscovery = packet?.data
   let decoded = getPacketDecoded(packet)
   let payload = parsePayloadBytes(decoded?.payload)
+  if (!payload?.length) return undefined
 
-  if (payload?.length) {
-    routeDiscovery = fromBinary(Protobuf.Mesh.RouteDiscoverySchema, payload)
-  }
-
-  if (!routeDiscovery) return undefined
+  let routeDiscovery = fromBinary(Protobuf.Mesh.RouteDiscoverySchema, payload)
 
   return {
     route: normalizeRouteNodeIds(routeDiscovery.route),
