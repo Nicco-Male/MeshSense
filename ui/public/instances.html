@@ -1625,6 +1625,8 @@
           continue;
         }
 
+        if (edge.kind !== "trace") continue;
+
         const latlngs = edge.ids.map(id => findNodeById(id, edge.instanceId)).filter(validLatLon).map(node => [Number(node.latitude), Number(node.longitude)]);
         if (latlngs.length < 2) continue;
         alive.add(key);
