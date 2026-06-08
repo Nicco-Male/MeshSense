@@ -3,6 +3,8 @@ import { Server } from 'http'
 import WebSocket, { WebSocketServer } from 'ws'
 import EventEmitter from 'eventemitter3'
 import { parse } from 'url'
+import { fromBinary } from '@bufbuild/protobuf'
+import * as Protobuf from '@meshtastic/protobufs'
 import { address, channels, connectionStatus, nodes, type Channel, type MeshPacket, type NodeInfo } from '../vars'
 
 export type NormalizedNode = {
@@ -17,6 +19,19 @@ export type NormalizedNode = {
   latitude?: number
   longitude?: number
   role?: string | number
+}
+
+export type NormalizedTraceRoute = {
+  direction: 'towards' | 'back'
+  nodes: string[]
+  snr: number[]
+}
+
+export type NormalizedRouteDiscovery = {
+  route: string[]
+  routeBack: string[]
+  snrTowards: number[]
+  snrBack: number[]
 }
 
 export type NormalizedPacket = {
@@ -37,6 +52,9 @@ export type NormalizedPacket = {
   hopLimit?: number
   hopStart?: number
   hopsUsed?: number | null
+  routeDiscovery?: NormalizedRouteDiscovery
+  traceRoutes?: NormalizedTraceRoute[]
+  traceRoute?: string[]
   raw: any
 }
 
@@ -163,6 +181,58 @@ export function normalizeRadioMetrics(rxRssi?: number, rxSnr?: number) {
   return { rssi: rxRssi ?? null, snr: rxSnr ?? null, hasRadioMetrics: true }
 }
 
+
+function parsePayloadBytes(payload?: Uint8Array | number[] | Record<string, number>): Uint8Array | undefined {
+  if (!payload) return undefined
+  if (payload instanceof Uint8Array) return payload
+  if (Array.isArray(payload)) return Uint8Array.from(payload)
+
+  return Uint8Array.from(
+    Object.entries(payload)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([, value]) => value)
+  )
+}
+
+function normalizeRouteNodeIds(route?: unknown[]): string[] {
+  if (!Array.isArray(route)) return []
+  return route.map((nodeNum) => normalizeNodeId(nodeNum as number | string)).filter((nodeId): nodeId is string => !!nodeId)
+}
+
+function normalizeScaledSnr(snr?: unknown[]): number[] {
+  if (!Array.isArray(snr)) return []
+  return snr.map((value) => numeric(value)).filter((value): value is number => value !== undefined).map((value) => value / 4)
+}
+
+function decodeRouteDiscovery(packet: any, portnum?: number | string): NormalizedRouteDiscovery | undefined {
+  if (numeric(portnum) != 70) return undefined
+
+  let routeDiscovery = packet?.data
+  let decoded = getPacketDecoded(packet)
+  let payload = parsePayloadBytes(decoded?.payload)
+
+  if (payload?.length) {
+    routeDiscovery = fromBinary(Protobuf.Mesh.RouteDiscoverySchema, payload)
+  }
+
+  if (!routeDiscovery) return undefined
+
+  return {
+    route: normalizeRouteNodeIds(routeDiscovery.route),
+    routeBack: normalizeRouteNodeIds(routeDiscovery.routeBack),
+    snrTowards: normalizeScaledSnr(routeDiscovery.snrTowards),
+    snrBack: normalizeScaledSnr(routeDiscovery.snrBack)
+  }
+}
+
+function buildTraceRoutes(routeDiscovery?: NormalizedRouteDiscovery): NormalizedTraceRoute[] | undefined {
+  if (!routeDiscovery) return undefined
+  return [
+    { direction: 'towards', nodes: routeDiscovery.route, snr: routeDiscovery.snrTowards },
+    { direction: 'back', nodes: routeDiscovery.routeBack, snr: routeDiscovery.snrBack }
+  ]
+}
+
 function getPacketDecoded(packet: any) {
   return packet?.decoded ?? (packet?.payloadVariant?.case == 'decoded' ? packet.payloadVariant.value : undefined) ?? (packet?.variant?.case == 'decoded' ? packet.variant.value : undefined)
 }
@@ -199,6 +269,8 @@ export function normalizePacket(packet: MeshPacket | any): NormalizedPacket {
   let to = numeric(safePacket.to)
   let rxTimeSec = parseTime(safePacket.rxTime)
   let radioMetrics = normalizeRadioMetrics(numeric(safePacket.rxRssi ?? safePacket.rssi), numeric(safePacket.rxSnr ?? safePacket.snr))
+  let routeDiscovery = decodeRouteDiscovery(safePacket, portnum)
+  let traceRoutes = buildTraceRoutes(routeDiscovery)
 
   return compact({
     id: safePacket.id,
@@ -216,6 +288,9 @@ export function normalizePacket(packet: MeshPacket | any): NormalizedPacket {
     hopLimit,
     hopStart,
     hopsUsed: calculateHopsUsed(hopStart, hopLimit),
+    routeDiscovery,
+    traceRoutes,
+    traceRoute: routeDiscovery?.route,
     raw: safePacket
   })
 }

@@ -1030,7 +1030,7 @@
         <div class="logo" aria-hidden="true"></div>
         <div>
           <h1>MeshSense Control</h1>
-          <div class="subtitle">Dashboard multi-istanza con marker uniformi, nodi MeshSense evidenziati e traceroute reali</div>
+          <div class="subtitle">Dashboard multi-istanza con marker uniformi, nodi MeshSense evidenziati e linee traceroute</div>
         </div>
       </div>
       <div class="actions">
@@ -1125,7 +1125,7 @@
               </label>
               <label class="toggle">
                 <input type="checkbox" id="toggleLines" checked />
-                TraceRoute reali
+                Linee traceroute
               </label>
               <button class="btn" id="btnCenterLocal" type="button">Centra MeshSense</button>
             </div>
@@ -1554,66 +1554,56 @@
       return state.mergedNodes.get(clean) || null;
     }
 
-    function extractRouteIds(packet) {
-      const candidates = [
-        packet.route,
-        packet.routes,
-        packet.traceRoute,
-        packet.traceroute,
-        packet.trace,
-        packet.path,
-        packet.hops,
-        packet.via,
-        packet.routeNodes,
-        packet.decodedRoute,
-        packet.raw?.route,
-        packet.raw?.traceRoute,
-        packet.raw?.decodedRoute,
-        packet.raw?.message?.route,
-      ].filter(Boolean);
-
-      function normalizeRouteArray(value) {
-        if (!value) return [];
-        if (Array.isArray(value)) {
-          return value.map(item => {
-            if (typeof item === "string" || typeof item === "number") return normalizeNodeId(item);
-            if (item && typeof item === "object") {
-              return normalizeNodeId(item.id || item.nodeId || item.fromId || item.num || item.nodeNum || item.node || item.router);
-            }
-            return "";
-          }).filter(Boolean);
-        }
-        if (typeof value === "object") {
-          const arr = value.nodes || value.path || value.hops || value.route || value.via;
-          return normalizeRouteArray(arr);
-        }
-        return [];
+    function normalizeRouteArray(value) {
+      if (!value) return [];
+      if (Array.isArray(value)) {
+        return value.map(item => {
+          if (typeof item === "string" || typeof item === "number") return normalizeNodeId(item);
+          if (item && typeof item === "object") {
+            return normalizeNodeId(item.id || item.nodeId || item.num || item.nodeNum || item.node);
+          }
+          return "";
+        }).filter(Boolean);
       }
-
-      for (const candidate of candidates) {
-        const route = normalizeRouteArray(candidate);
-        if (route.length >= 2) return route;
+      if (typeof value === "object") {
+        return normalizeRouteArray(value.nodes || value.route);
       }
       return [];
     }
 
+    function extractTraceRoutes(packet) {
+      const routes = [];
+      if (Array.isArray(packet.traceRoutes)) {
+        for (const traceRoute of packet.traceRoutes) {
+          const nodes = normalizeRouteArray(traceRoute?.nodes);
+          if (nodes.length >= 2) {
+            routes.push({
+              direction: traceRoute.direction || "towards",
+              nodes,
+              snr: Array.isArray(traceRoute.snr) ? traceRoute.snr : [],
+            });
+          }
+        }
+      }
+
+      if (!routes.length) {
+        const nodes = normalizeRouteArray(packet.traceRoute);
+        if (nodes.length >= 2) routes.push({ direction: "towards", nodes, snr: [] });
+      }
+
+      return routes;
+    }
+
     function processPacketEdges(packet, instance) {
-      // v5: le linee devono essere coerenti con MeshSense/Meshtastic.
-      // Disegniamo SOLO traceroute reali, cioè RouteDiscovery/TRACEROUTE_APP
-      // già decodificati dal backend in un array ordinato di nodi.
-      // Non disegniamo più collegamenti RX presunti o from→to generici, perché
-      // quelli producono la raggiera falsa vista sulla mappa.
-      const route = extractRouteIds(packet);
-      if (route.length >= 2) {
-        addEdge("trace", instance, route, {
+      for (const route of extractTraceRoutes(packet)) {
+        addEdge("trace", instance, route.nodes, {
           packetId: packet.id,
-          hopsUsed: packet.hopsUsed,
-          hopStart: packet.hopStart,
-          hopLimit: packet.hopLimit,
-          traceroute: true,
+          direction: route.direction,
+          snr: route.snr,
         });
       }
     }
+
 
     function renderEdges() {
       if (!state.traceLayer) return;
@@ -1641,12 +1631,13 @@
         if (latlngs.length < 2) continue;
         alive.add(key);
 
+        const isTrace = edge.kind === "trace";
         const style = {
           pane: "tracePane",
-          color: "#1d4ed8",
-          weight: 4,
-          opacity: 0.72,
-          dashArray: "12 8",
+          color: isTrace ? "#ff7a1a" : "#3b82f6",
+          weight: isTrace ? 4 : 2,
+          opacity: isTrace ? 0.92 : 0.50,
+          dashArray: isTrace ? null : "8 8",
           lineCap: "round",
           lineJoin: "round",
           className: "trace-line",
@@ -1664,7 +1655,7 @@
         const names = edge.ids.map(id => displayNodeName(findNodeById(id, edge.instanceId) || { id })).join(" → ");
         line.bindPopup(`
           <div class="popup">
-            <h3>Traceroute</h3>
+            <h3>${edge.kind === "trace" ? "Traceroute" : "Packet path"}</h3>
             <div class="muted">${escapeHtml(edge.instanceName || "Istanza")}</div>
             <div style="margin-top:8px;" class="mono">${escapeHtml(names)}</div>
             <div style="margin-top:8px;" class="muted">${formatAge(edge.lastSeen)}</div>

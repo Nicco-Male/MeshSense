@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { create, toBinary } from '@bufbuild/protobuf'
+import * as Protobuf from '@meshtastic/protobufs'
 import {
   calculateHopsUsed,
   filterPackets,
@@ -50,6 +52,37 @@ assert.equal(normalized.hopsUsed, null)
 assert.equal(normalized.rssi, null)
 assert.equal(normalized.snr, null)
 assert.equal(normalized.hasRadioMetrics, false)
+assert.equal(normalized.traceRoutes, undefined)
+
+const routeDiscoveryPayload = toBinary(
+  Protobuf.Mesh.RouteDiscoverySchema,
+  create(Protobuf.Mesh.RouteDiscoverySchema, {
+    route: [0x1234abcd, 0x00000001],
+    snrTowards: [24, -2],
+    routeBack: [0x00000002],
+    snrBack: [14]
+  })
+)
+const traceroutePacket = normalizePacket({
+  id: 100,
+  rxTime: 1001,
+  from: 0x1234abcd,
+  to: 0x00000002,
+  payloadVariant: { case: 'decoded', value: { portnum: 70, payload: routeDiscoveryPayload } }
+})
+assert.equal(traceroutePacket.app, 'TRACEROUTE_APP')
+assert.equal(traceroutePacket.type, 'traceroute')
+assert.deepEqual(traceroutePacket.routeDiscovery, {
+  route: ['!1234abcd', '!00000001'],
+  routeBack: ['!00000002'],
+  snrTowards: [6, -0.5],
+  snrBack: [3.5]
+})
+assert.deepEqual(traceroutePacket.traceRoutes, [
+  { direction: 'towards', nodes: ['!1234abcd', '!00000001'], snr: [6, -0.5] },
+  { direction: 'back', nodes: ['!00000002'], snr: [3.5] }
+])
+assert.deepEqual(traceroutePacket.traceRoute, ['!1234abcd', '!00000001'])
 
 const packets: NormalizedPacket[] = [
   { id: 1, rxTime: unixSecondsToIso(100), rxTimeSec: 100, from: 10, to: 20, portnum: 1, raw: {} },

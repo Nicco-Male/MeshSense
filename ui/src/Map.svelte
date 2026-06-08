@@ -43,7 +43,7 @@
     ol.plotLines(
       'routes',
       nodesWithCoords
-        .filter((n) => (n.trace || n.hopsAway == 0) && $nodeVisibilityMode != 'inactive' && !n.trace?.route?.some((routeNodeId) => isInactive(getNodeById(routeNodeId))))
+        .filter((n) => n.trace?.route?.length && $nodeVisibilityMode != 'inactive' && !n.trace?.route?.some((routeNodeId) => isInactive(getNodeById(routeNodeId))))
         .map((n) => {
           let list: any[] = [...(n.trace?.route?.map((traceNode) => getCoordinates(traceNode)) || []), getCoordinates(n)]
           if (myNodeCoords[0] && myNodeCoords[1]) list.unshift(myNodeCoords)

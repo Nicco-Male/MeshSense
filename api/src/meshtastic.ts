@@ -10,6 +10,7 @@ import { isSerialPath, listSerialPorts } from './lib/serial'
 import {
   Channel,
   MeshPacket,
+  TraceRouteData,
   NodeInfo,
   Position,
   address,
@@ -41,7 +42,7 @@ import axios from 'axios'
 import { State } from './lib/state'
 import { recordMessage, recordNodeUpdate, recordPacket } from './lib/publicApi'
 
-let routeCache: State<Record<number, number[]>>
+let routeCache: State<Record<number, TraceRouteData>>
 
 let connection: HttpConnection | BleConnection | NodeSerialConnection
 let connectionIntended = false
