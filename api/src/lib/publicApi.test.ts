@@ -9,13 +9,15 @@ import {
   normalizePacket,
   getCurrentNodeSnapshot,
   getTraceRouteSnapshot,
+  getPacketSnapshot,
+  ensureTraceHistoryBootstrapped,
   normalizeRadioMetrics,
   recordPacket,
   runtimeStore,
   unixSecondsToIso,
   type NormalizedPacket
 } from './publicApi'
-import { nodes } from '../vars'
+import { nodes, packets as packetHistory } from '../vars'
 
 assert.equal(normalizeNodeId(0x1234abcd), '!1234abcd')
 assert.equal(normalizeNodeId(1), '!00000001')
@@ -78,16 +80,16 @@ const traceroutePacket = normalizePacket({
 assert.equal(traceroutePacket.app, 'TRACEROUTE_APP')
 assert.equal(traceroutePacket.type, 'traceroute')
 assert.deepEqual(traceroutePacket.routeDiscovery, {
-  route: ['!1234abcd', '!00000001'],
-  routeBack: ['!00000002'],
+  route: ['!1234abcd', '!00000001', '!00000002'],
+  routeBack: ['!00000002', '!1234abcd'],
   snrTowards: [6, -0.5],
   snrBack: [3.5]
 })
 assert.deepEqual(traceroutePacket.traceRoutes, [
-  { direction: 'towards', nodes: ['!1234abcd', '!00000001'], snr: [6, -0.5] },
-  { direction: 'back', nodes: ['!00000002'], snr: [3.5] }
+  { direction: 'towards', nodes: ['!1234abcd', '!00000001', '!00000002'], snr: [6, -0.5] },
+  { direction: 'back', nodes: ['!00000002', '!1234abcd'], snr: [3.5] }
 ])
-assert.deepEqual(traceroutePacket.traceRoute, ['!1234abcd', '!00000001'])
+assert.deepEqual(traceroutePacket.traceRoute, ['!1234abcd', '!00000001', '!00000002'])
 
 runtimeStore.traceRoutes.clear()
 recordPacket({
@@ -98,7 +100,7 @@ recordPacket({
   payloadVariant: { case: 'decoded', value: { portnum: 70, payload: routeDiscoveryPayload } }
 })
 assert.equal(getTraceRouteSnapshot().length, 1)
-assert.deepEqual(getTraceRouteSnapshot()[0].traceRoutes?.[0].nodes, ['!1234abcd', '!00000001'])
+assert.deepEqual(getTraceRouteSnapshot()[0].traceRoutes?.[0].nodes, ['!1234abcd', '!00000001', '!00000002'])
 recordPacket({
   id: 100,
   rxTime: 1002,
@@ -150,6 +152,37 @@ assert.equal(runtimeStore.nodesSeen, 2)
 nodes.set([] as any)
 runtimeStore.nodes.clear()
 runtimeStore.nodesSeen = 0
+
+
+runtimeStore.traceRoutes.clear()
+runtimeStore.packets = []
+runtimeStore.historyBootstrapped = false
+packetHistory.set([
+  {
+    id: 101,
+    rxTime: 1003,
+    from: 0x1234abcd,
+    to: 0x00000002,
+    data: {
+      $typeName: 'meshtastic.RouteDiscovery',
+      route: [0x1234abcd, 0x00000001, 0x00000002],
+      routeBack: [0x00000002, 0x00000001, 0x1234abcd],
+      snrTowards: [6, -0.5],
+      snrBack: [3.5, 2, 1]
+    }
+  } as any
+])
+ensureTraceHistoryBootstrapped()
+assert.equal(getTraceRouteSnapshot().length, 1)
+assert.equal(getPacketSnapshot().filter((packet) => String(packet.portnum) == '70' && packet.routeDiscovery).length, 1)
+assert.deepEqual(getTraceRouteSnapshot()[0].traceRoutes?.map((route) => route.nodes), [
+  ['!1234abcd', '!00000001', '!00000002'],
+  ['!00000002', '!00000001', '!1234abcd']
+])
+packetHistory.set([] as any)
+runtimeStore.traceRoutes.clear()
+runtimeStore.packets = []
+runtimeStore.historyBootstrapped = false
 
 const packets: NormalizedPacket[] = [
   { id: 1, rxTime: unixSecondsToIso(100), rxTimeSec: 100, from: 10, to: 20, portnum: 1, raw: {} },
