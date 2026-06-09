@@ -74,13 +74,7 @@ Returns known nodes normalized as:
     "rssi": -87,
     "latitude": 45.1234567,
     "longitude": 9.1234567,
-    "role": 1,
-    "hopsAway": 2,
-    "traceHops": {
-      "towards": 1,
-      "back": 2,
-      "min": 1
-    }
+    "role": 1
   }
 ]
 ```
@@ -240,13 +234,7 @@ Broadcast when a node is updated:
     "rssi": -87,
     "latitude": 45.1234567,
     "longitude": 9.1234567,
-    "role": 1,
-    "hopsAway": 2,
-    "traceHops": {
-      "towards": 1,
-      "back": 2,
-      "min": 1
-    }
+    "role": 1
   }
 }
 ```

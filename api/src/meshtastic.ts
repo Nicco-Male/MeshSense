@@ -41,7 +41,6 @@ import * as geolib from 'geolib'
 import axios from 'axios'
 import { State } from './lib/state'
 import { recordMessage, recordNodeUpdate, recordPacket } from './lib/publicApi'
-import { calculateTraceHops } from './lib/traceHops'
 
 let routeCache: State<Record<number, TraceRouteData>>
 
@@ -109,7 +108,6 @@ function checkForCachedRoute(node: NodeInfo) {
   if (trace) {
     console.log('Loading cached route', node.num, trace)
     node.trace = trace
-    node.traceHops = calculateTraceHops(trace)
     traceRouteLog[node.num] = Date.now()
   }
 }
@@ -516,7 +514,7 @@ export async function connect(address?: string) {
     let packet: MeshPacket
     if (id) packet = packets.upsert({ id, data })
     if (e.from && data) {
-      let node = nodes.upsert({ num: e.from, trace: data, traceHops: calculateTraceHops(data) })
+      let node = nodes.upsert({ num: e.from, trace: data })
       recordNodeUpdate(node)
       if (routeCache) routeCache.assign({ [e.from]: data })
       if (packet?.viaMqtt === false) sendToMeshMap({ num: e.from, trace: data }, node, packet)

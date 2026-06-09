@@ -7,7 +7,6 @@ import {
   normalizeDestinationId,
   normalizeNodeId,
   normalizePacket,
-  normalizeNode,
   getCurrentNodeSnapshot,
   getTraceRouteSnapshot,
   normalizeRadioMetrics,
@@ -110,21 +109,6 @@ recordPacket({
 assert.equal(getTraceRouteSnapshot().length, 1)
 runtimeStore.traceRoutes.clear()
 
-
-const asymmetricNode = normalizeNode({
-  num: 3713539736,
-  user: { id: '!dd581e98', longName: 'TOS001', shortName: 'TOS1' },
-  hopsAway: 2,
-  trace: {
-    route: [3236766470],
-    snrTowards: [43, -49],
-    routeBack: [1236522492, 286039251, 3236766470],
-    snrBack: [-51, -20, -6, 20]
-  }
-})
-assert.equal(asymmetricNode.hopsAway, 2)
-assert.deepEqual(asymmetricNode.traceHops, { towards: 1, back: 2, min: 1 })
-
 runtimeStore.nodes.clear()
 runtimeStore.nodes.set(0x1234abcd, {
   num: 0x1234abcd,
@@ -162,7 +146,6 @@ assert.equal(snapshot[1].snr, 7)
 assert.equal(snapshot[1].latitude, 45.1234567)
 assert.equal(snapshot[1].longitude, 9.1234567)
 assert.deepEqual(snapshot[1].trace, { route: [0x1234abcd, 1] })
-assert.deepEqual(snapshot[1].traceHops, { towards: 2, back: null, min: 2 })
 assert.equal(runtimeStore.nodesSeen, 2)
 nodes.set([] as any)
 runtimeStore.nodes.clear()
