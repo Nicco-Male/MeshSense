@@ -512,7 +512,10 @@ export async function connect(address?: string) {
   connection.events.onTraceRoutePacket.subscribe((e) => {
     let { id, data } = copy(e)
     let packet: MeshPacket
-    if (id) packet = packets.upsert({ id, data })
+    if (id) {
+      packet = packets.upsert({ id, data })
+      recordPacket(packet)
+    }
     if (e.from && data) {
       let node = nodes.upsert({ num: e.from, trace: data })
       recordNodeUpdate(node)

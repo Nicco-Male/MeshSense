@@ -1634,6 +1634,25 @@
         }
       }
 
+      if (!routes.length && packet.routeDiscovery) {
+        const towards = normalizeRouteArray(packet.routeDiscovery.route);
+        const back = normalizeRouteArray(packet.routeDiscovery.routeBack);
+        if (towards.length >= 2) {
+          routes.push({
+            direction: "towards",
+            nodes: towards,
+            snr: Array.isArray(packet.routeDiscovery.snrTowards) ? packet.routeDiscovery.snrTowards : [],
+          });
+        }
+        if (back.length >= 2) {
+          routes.push({
+            direction: "back",
+            nodes: back,
+            snr: Array.isArray(packet.routeDiscovery.snrBack) ? packet.routeDiscovery.snrBack : [],
+          });
+        }
+      }
+
       if (!routes.length) {
         const nodes = normalizeRouteArray(packet.traceRoute);
         if (nodes.length >= 2) routes.push({ direction: "towards", nodes, snr: [] });
