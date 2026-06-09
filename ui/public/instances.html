@@ -1770,18 +1770,39 @@
       return 0.38;
     }
 
-    function calculateTraceHops(trace) {
-      if (!trace || typeof trace !== "object") return undefined;
-      const towards = Array.isArray(trace.route) && trace.route.length ? trace.route.length : null;
-      const backRoute = trace.routeBack ?? trace.back;
-      const back = Array.isArray(backRoute) && backRoute.length ? Math.max(backRoute.length - 1, 0) : null;
-      const valid = [towards, back].filter(value => value !== null);
-      if (!valid.length) return undefined;
-      return { towards, back, min: Math.min(...valid) };
+    function routeHopCandidate(route) {
+      if (!Array.isArray(route) || !route.length) return null;
+      return route.length;
+    }
+
+    function routeBackHopCandidate(routeBack) {
+      if (!Array.isArray(routeBack) || !routeBack.length) return null;
+      return Math.max(1, routeBack.length - 1);
+    }
+
+    function positiveCandidate(value) {
+      const numberValue = Number(value);
+      return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : null;
+    }
+
+    function finiteCandidate(value) {
+      const numberValue = Number(value);
+      return Number.isFinite(numberValue) ? numberValue : null;
+    }
+
+    function calculateTraceHops(nodeOrTrace) {
+      if (!nodeOrTrace || typeof nodeOrTrace !== "object") return undefined;
+      const trace = nodeOrTrace.trace && typeof nodeOrTrace.trace === "object" ? nodeOrTrace.trace : nodeOrTrace;
+      const towards = routeHopCandidate(trace?.route);
+      const back = routeBackHopCandidate(trace?.routeBack ?? trace?.back);
+      const candidates = [towards, back, positiveCandidate(nodeOrTrace.hopsAway)].filter(value => value !== null);
+      const min = candidates.length ? Math.min(...candidates) : finiteCandidate(nodeOrTrace.hopsAway);
+      if (min === null) return undefined;
+      return { towards, back, min };
     }
 
     function getTraceHops(node) {
-      return node?.traceHops ?? calculateTraceHops(node?.trace);
+      return calculateTraceHops(node) ?? node?.traceHops;
     }
 
     function getDisplayHops(node) {
@@ -1810,7 +1831,7 @@
       node.instanceColor = instance.color;
       node._lastHeardMs = lastHeardMs(node);
       node._hasPosition = validLatLon(node);
-      node.traceHops = node.traceHops ?? calculateTraceHops(node.trace);
+      node.traceHops = calculateTraceHops(node) ?? node.traceHops;
       return node;
     }
 

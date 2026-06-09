@@ -70,7 +70,7 @@ export function scrollToBottom(element: HTMLElement, force?, notifyUnseen: (reco
 
 
 export function getTraceHops(node: Partial<NodeInfo> | any): TraceHops | undefined {
-  return node?.traceHops ?? calculateTraceHops(node?.trace)
+  return calculateTraceHops(node) ?? node?.traceHops
 }
 
 export function getDisplayHops(node: Partial<NodeInfo> | any): number | null {

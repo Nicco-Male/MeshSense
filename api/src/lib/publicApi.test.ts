@@ -125,6 +125,35 @@ const asymmetricNode = normalizeNode({
 assert.equal(asymmetricNode.hopsAway, 2)
 assert.deepEqual(asymmetricNode.traceHops, { towards: 1, back: 2, min: 1 })
 
+
+const singleBackNode = normalizeNode({
+  user: { longName: 'Albe-Fisso', shortName: 'A-P1' },
+  hopsAway: 1,
+  trace: {
+    route: [319441100],
+    routeBack: [319441100]
+  },
+  traceHops: { towards: 1, back: 0, min: 0 }
+})
+assert.deepEqual(singleBackNode.traceHops, { towards: 1, back: 1, min: 1 })
+
+const ducaNode = normalizeNode({
+  user: { longName: 'Fantastic Mobile', shortName: 'Duca' },
+  hopsAway: 2,
+  trace: {
+    route: [319441100, 3139505583],
+    routeBack: [3139505583]
+  }
+})
+assert.deepEqual(ducaNode.traceHops, { towards: 2, back: 1, min: 1 })
+
+const directNodeWithoutTrace = normalizeNode({
+  user: { shortName: 'DIR' },
+  hopsAway: 0
+})
+assert.equal(directNodeWithoutTrace.hopsAway, 0)
+assert.deepEqual(directNodeWithoutTrace.traceHops, { towards: null, back: null, min: 0 })
+
 runtimeStore.nodes.clear()
 runtimeStore.nodes.set(0x1234abcd, {
   num: 0x1234abcd,
