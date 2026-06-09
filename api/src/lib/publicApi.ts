@@ -5,8 +5,7 @@ import EventEmitter from 'eventemitter3'
 import { parse } from 'url'
 import { fromBinary } from '@bufbuild/protobuf'
 import { Protobuf } from '../../meshtastic-js/dist'
-import { address, channels, connectionStatus, nodes, type Channel, type MeshPacket, type NodeInfo, type TraceHops } from '../vars'
-import { calculateTraceHops } from './traceHops'
+import { address, channels, connectionStatus, nodes, type Channel, type MeshPacket, type NodeInfo } from '../vars'
 
 export type NormalizedNode = {
   num?: number
@@ -22,9 +21,7 @@ export type NormalizedNode = {
   role?: string | number
   user?: { longName?: string; shortName?: string; [key: string]: any }
   position?: any
-  hopsAway?: number | null
   trace?: any
-  traceHops?: TraceHops
 }
 
 export type NormalizedTraceRoute = {
@@ -340,7 +337,6 @@ export function normalizeNode(node: Partial<NodeInfo> | any): NormalizedNode {
   let latitude = numeric(safeNode.position?.latitudeI) !== undefined ? numeric(safeNode.position.latitudeI) / 10000000 : numeric(safeNode.latitude ?? safeNode.approximatePosition?.latitude)
   let longitude = numeric(safeNode.position?.longitudeI) !== undefined ? numeric(safeNode.position.longitudeI) / 10000000 : numeric(safeNode.longitude ?? safeNode.approximatePosition?.longitude)
   let lastHeardSec = parseTime(safeNode.lastHeard)
-  let traceHops = safeNode.traceHops ?? calculateTraceHops(safeNode.trace)
 
   return compact({
     num: numeric(safeNode.num),
@@ -351,14 +347,12 @@ export function normalizeNode(node: Partial<NodeInfo> | any): NormalizedNode {
     lastHeardSec: lastHeardSec ?? null,
     snr: numeric(safeNode.snr) ?? null,
     rssi: numeric(safeNode.rssi ?? safeNode.rxRssi) ?? null,
-    hopsAway: numeric(safeNode.hopsAway) ?? null,
     latitude,
     longitude,
     role: safeNode.user?.role ?? safeNode.role,
     user: safeNode.user,
     position: safeNode.position,
-    trace: safeNode.trace,
-    traceHops
+    trace: safeNode.trace
   })
 }
 
@@ -466,10 +460,8 @@ function mergeNormalizedNode(previous: NormalizedNode | undefined, next: Normali
     lastHeardSec: newerLastHeard ? (nextLastHeard ?? null) : (previousLastHeard ?? previous.lastHeardSec ?? null),
     rssi: next.rssi ?? previous.rssi ?? null,
     snr: next.snr ?? previous.snr ?? null,
-    hopsAway: next.hopsAway ?? previous.hopsAway ?? null,
     role: next.role ?? previous.role,
-    trace: next.trace ?? previous.trace,
-    traceHops: next.traceHops ?? previous.traceHops
+    trace: next.trace ?? previous.trace
   })
 }
 

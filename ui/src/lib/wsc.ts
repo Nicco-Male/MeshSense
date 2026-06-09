@@ -14,7 +14,7 @@ export let socket: WebSocket | undefined = undefined
 export let status: 'Ready' | 'Connecting' | 'Connected' | 'Disconnected' | 'Closed' = 'Ready'
 
 let pendingMessages: MessageObject[] = []
-let reconnectTimeout: ReturnType<typeof setTimeout>
+let reconnectTimeout: number
 
 export class WebSocketClient {
   constructor(endpoint?: string, syncStates = true) {
