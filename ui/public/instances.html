@@ -1164,6 +1164,8 @@
 
   <script>
     const STORAGE_KEY = "meshsense.instances.dashboard.v2";
+    const GLOBAL_REGISTRY_KEY = "meshsense.instances.globalNodeRegistry.v1";
+    const GLOBAL_REGISTRY_VERSION = 1;
     const MAX_LOG_LINES = 180;
     const COLORS = ["#67e89a", "#60a5fa", "#facc15", "#f472b6", "#c084fc", "#fb923c", "#22d3ee", "#a3e635"];
 
@@ -1173,6 +1175,7 @@
       instanceRuntime: new Map(),
       nodesByInstance: new Map(),
       mergedNodes: new Map(),
+      globalRegistry: { version: GLOBAL_REGISTRY_VERSION, nodes: {}, manualOverrides: {}, sourceInstancesSeen: {}, lastUpdated: null },
       markers: new Map(),
       edges: new Map(),
       edgeLines: new Map(),
@@ -1299,6 +1302,176 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.instances, null, 2));
     }
 
+    function loadGlobalRegistry() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(GLOBAL_REGISTRY_KEY) || "null");
+        if (parsed && parsed.version === GLOBAL_REGISTRY_VERSION && parsed.nodes && typeof parsed.nodes === "object") {
+          state.globalRegistry = {
+            version: GLOBAL_REGISTRY_VERSION,
+            nodes: parsed.nodes || {},
+            manualOverrides: parsed.manualOverrides || {},
+            sourceInstancesSeen: parsed.sourceInstancesSeen || {},
+            lastUpdated: parsed.lastUpdated || null,
+          };
+          return;
+        }
+      } catch (err) {
+        log("Registro globale nodi non valido, riparto vuoto.");
+      }
+      state.globalRegistry = { version: GLOBAL_REGISTRY_VERSION, nodes: {}, manualOverrides: {}, sourceInstancesSeen: {}, lastUpdated: null };
+    }
+
+    function saveGlobalRegistry() {
+      try {
+        state.globalRegistry.version = GLOBAL_REGISTRY_VERSION;
+        state.globalRegistry.lastUpdated = nowIso();
+        localStorage.setItem(GLOBAL_REGISTRY_KEY, JSON.stringify(state.globalRegistry));
+      } catch (err) {
+        console.warn("MeshSense global registry persistence failed", err);
+      }
+    }
+
+    function registryNode(id) {
+      if (!state.globalRegistry.nodes[id]) {
+        state.globalRegistry.nodes[id] = {
+          id,
+          nameHistory: [],
+          positionHistory: [],
+          seenByInstances: {},
+          sources: {},
+          firstSeen: nowIso(),
+          lastSeen: nowIso(),
+        };
+      }
+      return state.globalRegistry.nodes[id];
+    }
+
+    function nonEmptyText(value) {
+      const text = String(value ?? "").trim();
+      return text ? text : "";
+    }
+
+    function mergeHistoryEntry(entries, matcher, update) {
+      const existing = entries.find(matcher);
+      const now = nowIso();
+      if (existing) {
+        existing.lastSeen = now;
+        existing.count = (existing.count || 0) + 1;
+        Object.assign(existing, update);
+        return existing;
+      }
+      const entry = { firstSeen: now, lastSeen: now, count: 1, ...update };
+      entries.push(entry);
+      return entry;
+    }
+
+    function currentInstanceDescriptor(instance) {
+      return { id: instance.id, name: instance.name, color: instance.color, baseUrl: instance.baseUrl };
+    }
+
+    function setManualNodeOverride(id, override) {
+      const clean = normalizeNodeId(id);
+      if (!clean) return;
+      const prev = state.globalRegistry.manualOverrides[clean] || {};
+      state.globalRegistry.manualOverrides[clean] = { ...prev, ...override, updatedAt: nowIso() };
+      recomputeRegistryCurrent(clean);
+      saveGlobalRegistry();
+      renderAll();
+    }
+
+    function clearManualNodeOverride(id) {
+      const clean = normalizeNodeId(id);
+      if (!clean) return;
+      delete state.globalRegistry.manualOverrides[clean];
+      recomputeRegistryCurrent(clean);
+      saveGlobalRegistry();
+      renderAll();
+    }
+
+    function recomputeRegistryCurrent(id) {
+      const entry = state.globalRegistry.nodes[id];
+      if (!entry) return null;
+      const manual = state.globalRegistry.manualOverrides[id] || {};
+      const names = [...(entry.nameHistory || [])].sort((a, b) => Date.parse(b.lastSeen || 0) - Date.parse(a.lastSeen || 0));
+      const positions = [...(entry.positionHistory || [])].sort((a, b) => Date.parse(b.lastSeen || 0) - Date.parse(a.lastSeen || 0));
+      const recentShort = names.find(item => nonEmptyText(item.shortName))?.shortName;
+      const recentLong = names.find(item => nonEmptyText(item.longName))?.longName;
+      const recentPosition = positions.find(item => validLatLon(item));
+      entry.shortName = nonEmptyText(manual.shortName) || recentShort || entry.shortName;
+      entry.longName = nonEmptyText(manual.longName) || recentLong || entry.longName;
+      if (validLatLon(manual)) {
+        entry.latitude = Number(manual.latitude);
+        entry.longitude = Number(manual.longitude);
+        entry.altitude = manual.altitude ?? entry.altitude;
+        entry.positionSource = "manual";
+      } else if (recentPosition) {
+        entry.latitude = Number(recentPosition.latitude);
+        entry.longitude = Number(recentPosition.longitude);
+        entry.altitude = recentPosition.altitude ?? entry.altitude;
+        entry.precisionBits = recentPosition.precisionBits ?? entry.precisionBits;
+        entry.positionSource = recentPosition.sourceType;
+      }
+      entry.manualOverride = !!state.globalRegistry.manualOverrides[id];
+      entry._lastHeardMs = Math.max(entry._lastHeardMs || 0, Date.parse(entry.lastSeen || 0) || 0);
+      entry._hasPosition = validLatLon(entry);
+      return entry;
+    }
+
+    function observeGlobalNode(rawNode, instance, sourceType = "nodes") {
+      const normalized = normalizeNode(rawNode, instance);
+      if (!normalized) return null;
+      const id = normalized.id;
+      const entry = registryNode(id);
+      const now = nowIso();
+      entry.lastSeen = now;
+      entry.sources[sourceType] = (entry.sources[sourceType] || 0) + 1;
+      entry.seenByInstances[instance.id] = currentInstanceDescriptor(instance);
+      state.globalRegistry.sourceInstancesSeen[instance.id] = currentInstanceDescriptor(instance);
+
+      const names = nodeNames(normalized);
+      if (names.shortName || names.longName) {
+        mergeHistoryEntry(
+          entry.nameHistory,
+          item => item.shortName === names.shortName && item.longName === names.longName && item.sourceInstanceId === instance.id && item.sourceType === sourceType,
+          { shortName: names.shortName, longName: names.longName, sourceInstanceId: instance.id, sourceInstanceName: instance.name, sourceType }
+        );
+      }
+
+      if (validLatLon(normalized)) {
+        mergeHistoryEntry(
+          entry.positionHistory,
+          item => Number(item.latitude).toFixed(7) === Number(normalized.latitude).toFixed(7) && Number(item.longitude).toFixed(7) === Number(normalized.longitude).toFixed(7) && item.sourceInstanceId === instance.id && item.sourceType === sourceType,
+          {
+            latitude: Number(normalized.latitude),
+            longitude: Number(normalized.longitude),
+            altitude: normalized.altitude ?? normalized.position?.altitude,
+            precisionBits: normalized.precisionBits ?? normalized.position?.precisionBits,
+            sourceInstanceId: instance.id,
+            sourceInstanceName: instance.name,
+            sourceType,
+          }
+        );
+      }
+
+      if (normalized._lastHeardMs) entry._lastHeardMs = Math.max(entry._lastHeardMs || 0, normalized._lastHeardMs);
+      return recomputeRegistryCurrent(id);
+    }
+
+    function registryDebugCounters() {
+      const entries = Object.values(state.globalRegistry.nodes || {});
+      return {
+        globalNodesTotal: entries.length,
+        globalNodesWithPosition: entries.filter(validLatLon).length,
+        namesFromHistory: entries.filter(node => (node.nameHistory || []).length).length,
+        positionsFromHistory: entries.filter(node => (node.positionHistory || []).length).length,
+        manualOverridesCount: Object.keys(state.globalRegistry.manualOverrides || {}).length,
+      };
+    }
+
+    function logGlobalDebugCounters(extra = {}) {
+      console.debug("MeshSense global registry diagnostics", { ...registryDebugCounters(), ...extra });
+    }
+
     function getRuntime(instanceId) {
       if (!state.instanceRuntime.has(instanceId)) {
         state.instanceRuntime.set(instanceId, {
@@ -1372,7 +1545,37 @@
       window.addEventListener("resize", fixMapSize);
     }
 
+    function numericValue(value) {
+      if (value === undefined || value === null || value === "") return undefined;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+
+    function firstNumericValue(...values) {
+      for (const value of values) {
+        const parsed = numericValue(value);
+        if (parsed !== undefined) return parsed;
+      }
+      return undefined;
+    }
+
+    function firstScaledCoordinate(...values) {
+      const parsed = firstNumericValue(...values);
+      return parsed === undefined ? undefined : parsed * 1e-7;
+    }
+
+    function extractCoordinates(raw) {
+      const node = raw || {};
+      const rawNode = node.raw || {};
+      const latitude = firstNumericValue(node.latitude, node.lat, node.position?.latitude, rawNode.latitude, rawNode.lat, rawNode.position?.latitude)
+        ?? firstScaledCoordinate(node.position?.latitudeI, node.latitudeI, node.latitude_i, rawNode.position?.latitudeI, rawNode.latitudeI, rawNode.latitude_i);
+      const longitude = firstNumericValue(node.longitude, node.lon, node.lng, node.position?.longitude, rawNode.longitude, rawNode.lon, rawNode.lng, rawNode.position?.longitude)
+        ?? firstScaledCoordinate(node.position?.longitudeI, node.longitudeI, node.longitude_i, rawNode.position?.longitudeI, rawNode.longitudeI, rawNode.longitude_i);
+      return { latitude, longitude };
+    }
+
     function validLatLon(node) {
+      if (!node) return false;
       const lat = Number(node.latitude);
       const lon = Number(node.longitude);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
@@ -1426,19 +1629,49 @@
 
     function displayNodeName(node) {
       const names = nodeNames(node);
-      return names.longName || names.shortName || node?.id || node?.fromId || String(node?.num || "Sconosciuto");
+      return names.longName || names.shortName || normalizeNodeId(node?.id || node?.fromId || node?.num) || node?.id || node?.fromId || String(node?.num || "Sconosciuto");
     }
 
 
+    function isInvalidPseudoNodeId(value) {
+      const str = String(value ?? "").trim().toLowerCase();
+      return !str || str === "^all" || str === "!ffffffff" || str === "ffffffff" || str === "4294967295";
+    }
+
     function normalizeNodeId(value) {
       if (value === null || value === undefined) return "";
-      if (typeof value === "number" && Number.isFinite(value)) return `!${value.toString(16).padStart(8, "0")}`;
+      if (isInvalidPseudoNodeId(value)) return "";
+      if (typeof value === "number" && Number.isFinite(value)) {
+        const unsigned = value >>> 0;
+        if (unsigned === 0xffffffff) return "";
+        return `!${unsigned.toString(16).padStart(8, "0")}`;
+      }
       const str = String(value).trim();
       if (!str) return "";
-      if (/^![0-9a-f]{8}$/i.test(str)) return str.toLowerCase();
-      if (/^[0-9a-f]{8}$/i.test(str)) return `!${str.toLowerCase()}`;
-      if (/^\d+$/.test(str)) return `!${Number(str).toString(16).padStart(8, "0")}`;
+      if (/^![0-9a-f]{8}$/i.test(str)) {
+        const id = str.toLowerCase();
+        return id === "!ffffffff" ? "" : id;
+      }
+      if (/^[0-9a-f]{8}$/i.test(str)) {
+        const id = `!${str.toLowerCase()}`;
+        return id === "!ffffffff" ? "" : id;
+      }
+      if (/^\d+$/.test(str)) {
+        const unsigned = Number(str) >>> 0;
+        if (unsigned === 0xffffffff) return "";
+        return `!${unsigned.toString(16).padStart(8, "0")}`;
+      }
       return "";
+    }
+
+    function normalizeRouteEndpoint(value) {
+      const id = normalizeNodeId(value);
+      if (id) return id;
+      return `__invalid__:${String(value ?? "").trim() || "empty"}`;
+    }
+
+    function isDrawableNodeId(value) {
+      return !!normalizeNodeId(value);
     }
 
     function shortNodeLabel(node) {
@@ -1568,8 +1801,8 @@
     }
 
     function addEdge(kind, instance, ids, meta = {}) {
-      const clean = ids.map(normalizeNodeId).filter(Boolean);
-      if (clean.length < 2) return;
+      const clean = ids.map(normalizeRouteEndpoint);
+      if (clean.filter(isDrawableNodeId).length < 2 || clean.length < 2) return;
       const direction = meta.direction === "back" ? "back" : "towards";
       const key = edgeKey(kind, instance.id, clean, direction);
       const previous = state.edges.get(key);
@@ -1589,30 +1822,44 @@
       getRuntime(instance.id).traceKeys.add(key);
     }
 
-    function findNodeById(id, instanceId = null) {
+    function registryDisplayNode(id) {
       const clean = normalizeNodeId(id);
       if (!clean) return null;
+      const node = state.globalRegistry.nodes[clean];
+      if (!node) return null;
+      return recomputeRegistryCurrent(clean) || node;
+    }
+
+    function findNodeById(id, instanceId = null, options = {}) {
+      const clean = normalizeNodeId(id);
+      if (!clean) return null;
+      const requirePosition = options.requirePosition !== false;
+      const usable = node => node && (!requirePosition || validLatLon(node));
       if (instanceId) {
         const node = state.nodesByInstance.get(instanceId)?.get(clean);
-        if (node && validLatLon(node)) return node;
+        if (usable(node)) return node;
       }
+      const globalNode = registryDisplayNode(clean);
+      if (usable(globalNode)) return { ...globalNode, id: clean, _fromGlobalRegistry: true };
       for (const nodes of state.nodesByInstance.values()) {
         const node = nodes.get(clean);
-        if (node && validLatLon(node)) return node;
+        if (usable(node)) return node;
       }
-      return state.mergedNodes.get(clean) || null;
+      const merged = state.mergedNodes.get(clean);
+      if (usable(merged)) return merged;
+      return globalNode || merged || null;
     }
 
     function normalizeRouteArray(value) {
       if (!value) return [];
       if (Array.isArray(value)) {
         return value.map(item => {
-          if (typeof item === "string" || typeof item === "number") return normalizeNodeId(item);
+          if (typeof item === "string" || typeof item === "number") return normalizeRouteEndpoint(item);
           if (item && typeof item === "object") {
-            return normalizeNodeId(item.id || item.nodeId || item.num || item.nodeNum || item.node);
+            return normalizeRouteEndpoint(item.id || item.nodeId || item.num || item.nodeNum || item.node);
           }
-          return "";
-        }).filter(Boolean);
+          return normalizeRouteEndpoint(item);
+        });
       }
       if (typeof value === "object") {
         return normalizeRouteArray(value.nodes || value.route);
@@ -1670,11 +1917,16 @@
 
     function upsertTraceNodeMetadata(packet, instance) {
       const metadata = packet?.nodeMetadata;
-      if (!metadata || typeof metadata !== "object") return;
-      for (const [id, node] of Object.entries(metadata)) {
-        if (!node || typeof node !== "object") continue;
-        upsertNode({ id, ...node }, instance);
+      if (metadata && typeof metadata === "object") {
+        for (const [id, node] of Object.entries(metadata)) {
+          if (!node || typeof node !== "object") continue;
+          upsertNode({ id, ...node, source: "traceMetadata" }, instance, "traceMetadata");
+        }
       }
+      const rawNode = packet?.raw?.node || packet?.rawNode;
+      if (rawNode && typeof rawNode === "object") upsertNode(rawNode, instance, "traceRawNode");
+      const endpoints = [packet?.fromId || packet?.from, packet?.toId || packet?.to].map(normalizeNodeId).filter(Boolean);
+      for (const id of endpoints) upsertNode({ id, lastHeard: packet?.rxTime, lastHeardSec: packet?.rxTimeSec, rssi: packet?.rssi, snr: packet?.snr }, instance, "packet");
     }
 
     function tracePacketKey(packet, route) {
@@ -1697,6 +1949,8 @@
             direction: route.direction,
             snr: route.snr,
             lastSeen: packetSeenMs(packet),
+            nodeMetadata: packet.nodeMetadata || null,
+            rawNode: packet.raw?.node || packet.rawNode || null,
           });
           added += 1;
         }
@@ -1728,19 +1982,32 @@
       let routeCount = 0;
       let totalSegments = 0;
       let drawableSegments = 0;
+      let skippedInvalidNodeSegments = 0;
+      let crossInstanceDrawableSegments = 0;
 
       for (const edge of state.edges.values()) {
         if (edge.kind !== "trace" || edge.instanceId !== instance.id) continue;
         routeCount += 1;
         for (let index = 0; index < edge.ids.length - 1; index += 1) {
+          const fromId = edge.ids[index];
+          const toId = edge.ids[index + 1];
           totalSegments += 1;
-          const fromNode = findNodeById(edge.ids[index], instance.id);
-          const toNode = findNodeById(edge.ids[index + 1], instance.id);
-          if (!fromNode) missingNodeIds.add(edge.ids[index]);
-          if (!toNode) missingNodeIds.add(edge.ids[index + 1]);
-          if (fromNode && !validLatLon(fromNode)) missingCoordinates.add(edge.ids[index]);
-          if (toNode && !validLatLon(toNode)) missingCoordinates.add(edge.ids[index + 1]);
-          if (validLatLon(fromNode) && validLatLon(toNode)) drawableSegments += 1;
+          if (!isDrawableNodeId(fromId) || !isDrawableNodeId(toId)) {
+            skippedInvalidNodeSegments += 1;
+            continue;
+          }
+          const localFrom = state.nodesByInstance.get(instance.id)?.get(normalizeNodeId(fromId));
+          const localTo = state.nodesByInstance.get(instance.id)?.get(normalizeNodeId(toId));
+          const fromNode = findNodeById(fromId, instance.id, { requirePosition: false });
+          const toNode = findNodeById(toId, instance.id, { requirePosition: false });
+          if (!fromNode) missingNodeIds.add(normalizeNodeId(fromId) || fromId);
+          if (!toNode) missingNodeIds.add(normalizeNodeId(toId) || toId);
+          if (fromNode && !validLatLon(fromNode)) missingCoordinates.add(normalizeNodeId(fromId));
+          if (toNode && !validLatLon(toNode)) missingCoordinates.add(normalizeNodeId(toId));
+          if (validLatLon(findNodeById(fromId, instance.id)) && validLatLon(findNodeById(toId, instance.id))) {
+            drawableSegments += 1;
+            if (!validLatLon(localFrom) || !validLatLon(localTo)) crossInstanceDrawableSegments += 1;
+          }
         }
       }
 
@@ -1749,12 +2016,54 @@
         routeCount,
         totalSegments,
         drawableSegments,
+        skippedInvalidNodeSegments,
+        crossInstanceDrawableSegments,
         missingNodeIds: Array.from(missingNodeIds).sort(),
         missingCoordinates: Array.from(missingCoordinates).sort(),
       };
-      console.debug("MeshSense trace diagnostics", instance.name, rt.traceStats);
+      logGlobalDebugCounters({
+        instance: instance.name,
+        tracesLoaded: rt.traceStats.tracesLoaded,
+        routeCount,
+        totalTraceSegments: totalSegments,
+        drawableTraceSegments: drawableSegments,
+        segmentsMadeDrawableByCrossInstanceRegistry: crossInstanceDrawableSegments,
+        skippedInvalidNodeSegments,
+        missingNodes: rt.traceStats.missingNodeIds.length,
+        missingPositions: rt.traceStats.missingCoordinates.length,
+      });
     }
 
+
+    function edgeNodeFromMetadata(edge, id) {
+      const clean = normalizeNodeId(id);
+      if (!clean) return null;
+      const meta = edge.nodeMetadata && edge.nodeMetadata[clean];
+      if (meta && typeof meta === "object") {
+        const normalized = normalizeNode({ id: clean, ...meta }, { id: edge.instanceId, name: edge.instanceName || "trace", color: edge.color || "#ff7a1a" });
+        if (normalized) return normalized;
+      }
+      const rawNode = edge.rawNode;
+      if (rawNode && typeof rawNode === "object") {
+        const normalized = normalizeNode(rawNode, { id: edge.instanceId, name: edge.instanceName || "trace", color: edge.color || "#ff7a1a" });
+        if (normalized?.id === clean) return normalized;
+      }
+      return null;
+    }
+
+    function resolveTraceNode(edge, id) {
+      const clean = normalizeNodeId(id);
+      if (!clean) return null;
+      const local = state.nodesByInstance.get(edge.instanceId)?.get(clean);
+      if (validLatLon(local)) return local;
+      const globalNode = registryDisplayNode(clean);
+      if (validLatLon(globalNode)) return { ...globalNode, id: clean, _fromGlobalRegistry: true };
+      const metadataNode = edgeNodeFromMetadata(edge, clean);
+      if (validLatLon(metadataNode)) return metadataNode;
+      const merged = state.mergedNodes.get(clean);
+      if (validLatLon(merged)) return merged;
+      return local || globalNode || metadataNode || merged || null;
+    }
 
     function renderEdges() {
       if (!state.traceLayer) return;
@@ -1783,10 +2092,13 @@
           className: "trace-line",
         };
 
-        const names = edge.ids.map(id => displayNodeName(findNodeById(id, edge.instanceId) || { id })).join(" → ");
+        const names = edge.ids.map(id => displayNodeName(resolveTraceNode(edge, id) || { id })).join(" → ");
         for (let index = 0; index < edge.ids.length - 1; index += 1) {
-          const fromNode = findNodeById(edge.ids[index], edge.instanceId);
-          const toNode = findNodeById(edge.ids[index + 1], edge.instanceId);
+          const fromId = edge.ids[index];
+          const toId = edge.ids[index + 1];
+          if (!isDrawableNodeId(fromId) || !isDrawableNodeId(toId)) continue;
+          const fromNode = resolveTraceNode(edge, fromId);
+          const toNode = resolveTraceNode(edge, toId);
           if (!validLatLon(fromNode) || !validLatLon(toNode)) continue;
 
           const segmentKey = `${key}:segment:${index}`;
@@ -1824,6 +2136,7 @@
       }
     }
 
+
     function lastHeardMs(node) {
       if (Number.isFinite(Number(node.lastHeardSec))) return Number(node.lastHeardSec) * 1000;
       if (Number.isFinite(Number(node.rxTimeSec))) return Number(node.rxTimeSec) * 1000;
@@ -1855,13 +2168,16 @@
     }
 
     function normalizeNode(raw, instance) {
-      const node = { ...raw, raw };
-      const id = nodeKey(node);
+      const node = { ...(raw || {}), raw };
+      const id = normalizeNodeId(nodeKey(node));
       if (!id) return null;
       const names = nodeNames(node);
+      const coords = extractCoordinates(node);
       node.id = id;
       node.longName = names.longName || node.longName;
       node.shortName = names.shortName || node.shortName;
+      if (coords.latitude !== undefined) node.latitude = coords.latitude;
+      if (coords.longitude !== undefined) node.longitude = coords.longitude;
       node.instanceId = instance.id;
       node.instanceName = instance.name;
       node.instanceColor = instance.color;
@@ -1881,9 +2197,10 @@
       return [];
     }
 
-    function upsertNode(rawNode, instance) {
+    function upsertNode(rawNode, instance, sourceType = "nodes") {
       const normalized = normalizeNode(rawNode, instance);
       if (!normalized) return;
+      observeGlobalNode(rawNode, instance, sourceType);
 
       if (!state.nodesByInstance.has(instance.id)) {
         state.nodesByInstance.set(instance.id, new Map());
@@ -1895,8 +2212,8 @@
       const merged = {
         ...prev,
         ...normalized,
-        latitude: normalized.latitude ?? prev.latitude,
-        longitude: normalized.longitude ?? prev.longitude,
+        latitude: validLatLon(normalized) ? normalized.latitude : prev.latitude,
+        longitude: validLatLon(normalized) ? normalized.longitude : prev.longitude,
         longName: normalized.longName || prev.longName,
         shortName: normalized.shortName || prev.shortName,
         role: normalized.role ?? prev.role,
@@ -1912,6 +2229,7 @@
       merged._hasPosition = validLatLon(merged);
       merged._isMeshSenseLocal = getRuntime(instance.id).localNodeIds.has(merged.id) || prev._isMeshSenseLocal || false;
       nodes.set(merged.id, merged);
+      saveGlobalRegistry();
 
       const rt = getRuntime(instance.id);
       rt.nodeCount = nodes.size;
@@ -1923,6 +2241,22 @@
       state.mergedNodes.clear();
 
       const mergeSame = el.merge.checked;
+      if (mergeSame) {
+        for (const [id, node] of Object.entries(state.globalRegistry.nodes || {})) {
+          const current = recomputeRegistryCurrent(id) || node;
+          if (!current) continue;
+          const seenBy = Object.values(current.seenByInstances || {}).map(item => ({
+            id: item.id,
+            name: item.name,
+            color: item.color || "#72d98b",
+            rssi: current.rssi,
+            snr: current.snr,
+            lastHeardMs: current._lastHeardMs,
+          }));
+          state.mergedNodes.set(id, { ...current, id, seenBy, _fromGlobalRegistry: true });
+        }
+      }
+
       for (const instance of state.instances) {
         const nodes = state.nodesByInstance.get(instance.id);
         if (!nodes) continue;
@@ -1932,8 +2266,14 @@
           const prev = state.mergedNodes.get(key);
 
           if (!prev) {
+            const globalNode = mergeSame ? registryDisplayNode(node.id) : null;
             state.mergedNodes.set(key, {
+              ...(globalNode || {}),
               ...node,
+              latitude: validLatLon(node) ? node.latitude : globalNode?.latitude,
+              longitude: validLatLon(node) ? node.longitude : globalNode?.longitude,
+              longName: node.longName || globalNode?.longName,
+              shortName: node.shortName || globalNode?.shortName,
               seenBy: [{
                 id: instance.id,
                 name: instance.name,
@@ -1956,9 +2296,13 @@
           });
 
           if ((node._lastHeardMs || 0) >= (prev._lastHeardMs || 0)) {
+            const prevLat = prev.latitude;
+            const prevLon = prev.longitude;
             Object.assign(prev, {
               ...prev,
               ...node,
+              latitude: validLatLon(node) ? node.latitude : prevLat,
+              longitude: validLatLon(node) ? node.longitude : prevLon,
               seenBy: prev.seenBy,
             });
           } else {
@@ -1974,20 +2318,35 @@
       }
     }
 
+    function historySummary(items, formatter, max = 4) {
+      return (items || [])
+        .slice()
+        .sort((a, b) => Date.parse(b.lastSeen || 0) - Date.parse(a.lastSeen || 0))
+        .slice(0, max)
+        .map(formatter)
+        .join("");
+    }
+
     function markerPopup(node) {
-      const seen = (node.seenBy || []).map(item => `
+      const registry = registryDisplayNode(node.id) || {};
+      const seenMap = registry.seenByInstances || {};
+      const seen = (node.seenBy || Object.values(seenMap) || []).map(item => `
         <span style="display:inline-flex;align-items:center;gap:5px;margin:2px 4px 2px 0;">
-          <span style="width:8px;height:8px;border-radius:999px;background:${item.color};display:inline-block;"></span>${escapeHtml(item.name)}
+          <span style="width:8px;height:8px;border-radius:999px;background:${item.color || "#72d98b"};display:inline-block;"></span>${escapeHtml(item.name)}
         </span>
       `).join("");
 
       const lat = Number(node.latitude);
       const lon = Number(node.longitude);
       const openUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=14/${lat}/${lon}`;
+      const sourceList = Object.entries(registry.sources || {}).map(([source, count]) => `${escapeHtml(source)} (${count})`).join(", ") || escapeHtml(node.source || node.positionSource || "nodes");
+      const nameHistory = historySummary(registry.nameHistory, item => `<div><span>${escapeHtml(item.sourceInstanceName || item.sourceType || "—")}</span>${escapeHtml(item.longName || item.shortName || "—")}</div>`);
+      const positionHistory = historySummary(registry.positionHistory, item => `<div><span>${escapeHtml(item.sourceInstanceName || item.sourceType || "—")}</span><span class="mono">${Number(item.latitude).toFixed(5)}, ${Number(item.longitude).toFixed(5)}</span></div>`);
+      const manual = registry.manualOverride ? `<span class="pill">override manuale</span>` : "";
 
       return `
         <div class="popup">
-          <h3>${escapeHtml(displayNodeName(node))}${isNodeLocalForAnyInstance(node) ? " · MeshSense" : ""}</h3>
+          <h3>${escapeHtml(displayNodeName(node))}${isNodeLocalForAnyInstance(node) ? " · MeshSense" : ""} ${manual}</h3>
           <div class="muted mono">${escapeHtml(node.id || "—")}</div>
           <div style="margin-top:6px;">${seen}</div>
           <div class="popup-grid">
@@ -1996,11 +2355,19 @@
             <div><span>Hop</span>${node.hopsUsed ?? "—"} / ${node.hopStart ?? node.hopLimit ?? "—"}</div>
             <div><span>Visto</span>${formatAge(node._lastHeardMs)}</div>
             <div style="grid-column:1 / -1;"><span>Coordinate</span><span class="mono">${lat.toFixed(6)}, ${lon.toFixed(6)}</span></div>
+            <div style="grid-column:1 / -1;"><span>Fonti</span>${sourceList}</div>
           </div>
-          <div style="margin-top:9px;"><a href="${openUrl}" target="_blank" rel="noreferrer">Apri in OSM</a></div>
+          ${nameHistory ? `<h4 style="margin:10px 0 4px;">Storico nomi</h4><div class="popup-grid">${nameHistory}</div>` : ""}
+          ${positionHistory ? `<h4 style="margin:10px 0 4px;">Storico posizioni</h4><div class="popup-grid">${positionHistory}</div>` : ""}
+          <div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;">
+            <a href="${openUrl}" target="_blank" rel="noreferrer">Apri in OSM</a>
+            <button class="btn" type="button" onclick="window.MeshSenseDashboard.editNode('${escapeHtml(node.id)}')">Modifica</button>
+            <button class="btn" type="button" onclick="window.MeshSenseDashboard.clearOverride('${escapeHtml(node.id)}')">Cancella override</button>
+          </div>
         </div>
       `;
     }
+
 
     function renderMarkers() {
       if (!state.nodeLayer) return;
@@ -2144,12 +2511,13 @@
       const online = state.instances.filter(item => getRuntime(item.id).status === "online").length;
       const allNodes = Array.from(state.mergedNodes.values());
       const mapped = allNodes.filter(validLatLon);
+      const debug = registryDebugCounters();
 
       el.statInstances.textContent = String(state.instances.length);
       el.statOnline.textContent = String(online);
       el.statNodes.textContent = String(allNodes.length);
       el.statMapped.textContent = String(mapped.length);
-      el.nodesHint.textContent = `${allNodes.length} nodi aggregati, ${mapped.length} con coordinate`;
+      el.nodesHint.textContent = `${allNodes.length} nodi aggregati, ${mapped.length} con coordinate · globali ${debug.globalNodesTotal}/${debug.globalNodesWithPosition} · override ${debug.manualOverridesCount}`;
     }
 
     function renderNodeTable() {
@@ -2168,8 +2536,10 @@
           </span>
         `).join("");
 
+        const registry = registryDisplayNode(node.id) || {};
+        const sourceBadge = registry.positionSource ? `<div class="muted">${escapeHtml(registry.positionSource)}${node._fromGlobalRegistry ? " · globale" : ""}</div>` : "";
         const coords = validLatLon(node)
-          ? `<span class="mono">${Number(node.latitude).toFixed(6)}, ${Number(node.longitude).toFixed(6)}</span>`
+          ? `<span class="mono">${Number(node.latitude).toFixed(6)}, ${Number(node.longitude).toFixed(6)}</span>${sourceBadge}`
           : `<span class="muted">—</span>`;
 
         return `
@@ -2187,6 +2557,34 @@
         `;
       }).join("");
     }
+
+    window.MeshSenseDashboard = {
+      editNode(id) {
+        const clean = normalizeNodeId(id);
+        if (!clean) return;
+        const current = registryDisplayNode(clean) || findNodeById(clean, null, { requirePosition: false }) || { id: clean };
+        const shortName = prompt("Short name", current.shortName || "");
+        if (shortName === null) return;
+        const longName = prompt("Long name", current.longName || "");
+        if (longName === null) return;
+        const latText = prompt("Latitude", validLatLon(current) ? String(current.latitude) : "");
+        if (latText === null) return;
+        const lonText = prompt("Longitude", validLatLon(current) ? String(current.longitude) : "");
+        if (lonText === null) return;
+        const override = { shortName, longName };
+        const latitude = numericValue(latText);
+        const longitude = numericValue(lonText);
+        if (latitude !== undefined && longitude !== undefined) {
+          override.latitude = latitude;
+          override.longitude = longitude;
+        }
+        setManualNodeOverride(clean, override);
+      },
+      clearOverride(id) {
+        clearManualNodeOverride(id);
+      },
+      registryCounters: registryDebugCounters,
+    };
 
     function renderAll() {
       renderInstances();
@@ -2528,6 +2926,7 @@
 
     initMap();
     loadInstances();
+    loadGlobalRegistry();
     renderAll();
     fixMapSize();
     refreshAll();

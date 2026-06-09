@@ -23,6 +23,7 @@ export type NormalizedNode = {
   user?: { longName?: string; shortName?: string; [key: string]: any }
   position?: any
   trace?: any
+  source?: string
 }
 
 export type NormalizedTraceRoute = {
@@ -160,11 +161,25 @@ function normalizeLimit(value: any, defaultValue: number, maxValue: number) {
   return Math.min(Math.floor(limit), maxValue)
 }
 
+function validNormalizedNodeId(id?: string): string | undefined {
+  if (!id) return undefined
+  let clean = String(id).trim().toLowerCase()
+  if (clean == '^all' || clean == '!ffffffff' || clean == 'ffffffff') return undefined
+  if (/^![0-9a-f]{8}$/.test(clean)) return clean
+  if (/^[0-9a-f]{8}$/.test(clean)) return `!${clean}`
+  return undefined
+}
+
 export function normalizeNodeId(num?: number | string, userId?: string): string | undefined {
-  if (typeof userId == 'string' && userId.startsWith('!')) return userId
+  let userClean = validNormalizedNodeId(userId)
+  if (userClean) return userClean
+  let directClean = typeof num == 'string' ? validNormalizedNodeId(num) : undefined
+  if (directClean) return directClean
   let parsed = numeric(num)
-  if (parsed === undefined) return userId
-  return `!${(parsed >>> 0).toString(16).padStart(8, '0')}`
+  if (parsed === undefined) return userClean
+  let unsigned = parsed >>> 0
+  if (unsigned == 0xffffffff) return undefined
+  return `!${unsigned.toString(16).padStart(8, '0')}`
 }
 
 export function normalizeDestinationId(num?: number | string): string | undefined {
@@ -207,7 +222,12 @@ function parsePayloadBytes(payload?: Uint8Array | number[] | Record<string, numb
 
 function normalizeRouteNodeIds(route?: unknown[]): string[] {
   if (!Array.isArray(route)) return []
-  return route.map((nodeNum) => normalizeNodeId(nodeNum as number | string)).filter((nodeId): nodeId is string => !!nodeId)
+  return route.map((nodeNum) => normalizeNodeId(nodeNum as number | string) ?? `__invalid__:${String(nodeNum ?? '').trim() || 'empty'}`)
+}
+
+function drawableRouteNodeIds(route?: string[]): string[] {
+  if (!Array.isArray(route)) return []
+  return route.filter((nodeId) => !!normalizeNodeId(nodeId))
 }
 
 function normalizeScaledSnr(snr?: unknown[]): number[] {
@@ -224,7 +244,7 @@ function normalizeExistingRouteDiscovery(value: any, scaleSnr = false): Normaliz
   if (!value || typeof value != 'object') return undefined
   let route = normalizeRouteNodeIds(value.route)
   let routeBack = normalizeRouteNodeIds(value.routeBack ?? value.back)
-  if (route.length < 2 && routeBack.length < 2) return undefined
+  if (drawableRouteNodeIds(route).length < 2 && drawableRouteNodeIds(routeBack).length < 2) return undefined
   return {
     route,
     routeBack,
@@ -238,7 +258,7 @@ function normalizeExistingTraceRoutes(value: any): NormalizedTraceRoute[] | unde
   let routes = value
     .map((route): NormalizedTraceRoute | undefined => {
       let nodes = normalizeRouteNodeIds(route?.nodes ?? route?.route)
-      if (nodes.length < 2) return undefined
+      if (drawableRouteNodeIds(nodes).length < 2) return undefined
       return {
         direction: route?.direction == 'back' ? 'back' : 'towards',
         nodes,
@@ -366,7 +386,7 @@ export function normalizePacket(packet: MeshPacket | any): NormalizedPacket {
     hopsUsed: calculateHopsUsed(hopStart, hopLimit),
     routeDiscovery,
     traceRoutes,
-    traceRoute: traceRoute.length >= 2 ? traceRoute : undefined,
+    traceRoute: drawableRouteNodeIds(traceRoute).length >= 2 ? traceRoute : undefined,
     raw: safePacket
   })
 }
@@ -386,10 +406,10 @@ function coordinateIValue(...values: any[]): number | undefined {
 
 export function normalizeNode(node: Partial<NodeInfo> | any): NormalizedNode {
   let safeNode = jsonSafe(node)
-  let latitude = coordinateIValue(safeNode.position?.latitudeI, safeNode.latitudeI, safeNode.latitude_i, safeNode.user?.latitudeI, safeNode.user?.latitude_i) ??
-    coordinateValue(safeNode.latitude, safeNode.position?.latitude, safeNode.user?.latitude, safeNode.raw?.latitude, safeNode.approximatePosition?.latitude)
-  let longitude = coordinateIValue(safeNode.position?.longitudeI, safeNode.longitudeI, safeNode.longitude_i, safeNode.user?.longitudeI, safeNode.user?.longitude_i) ??
-    coordinateValue(safeNode.longitude, safeNode.position?.longitude, safeNode.user?.longitude, safeNode.raw?.longitude, safeNode.approximatePosition?.longitude)
+  let latitude = coordinateIValue(safeNode.position?.latitudeI, safeNode.latitudeI, safeNode.latitude_i, safeNode.user?.latitudeI, safeNode.user?.latitude_i, safeNode.raw?.position?.latitudeI, safeNode.raw?.latitudeI, safeNode.raw?.latitude_i) ??
+    coordinateValue(safeNode.latitude, safeNode.lat, safeNode.position?.latitude, safeNode.user?.latitude, safeNode.raw?.latitude, safeNode.raw?.lat, safeNode.approximatePosition?.latitude)
+  let longitude = coordinateIValue(safeNode.position?.longitudeI, safeNode.longitudeI, safeNode.longitude_i, safeNode.user?.longitudeI, safeNode.user?.longitude_i, safeNode.raw?.position?.longitudeI, safeNode.raw?.longitudeI, safeNode.raw?.longitude_i) ??
+    coordinateValue(safeNode.longitude, safeNode.lon, safeNode.lng, safeNode.position?.longitude, safeNode.user?.longitude, safeNode.raw?.longitude, safeNode.raw?.lon, safeNode.raw?.lng, safeNode.approximatePosition?.longitude)
   let lastHeardSec = parseTime(safeNode.lastHeard)
 
   return compact({
@@ -406,7 +426,8 @@ export function normalizeNode(node: Partial<NodeInfo> | any): NormalizedNode {
     role: safeNode.user?.role ?? safeNode.role,
     user: safeNode.user,
     position: safeNode.position,
-    trace: safeNode.trace
+    trace: safeNode.trace,
+    source: safeNode.source
   })
 }
 
@@ -515,7 +536,8 @@ function mergeNormalizedNode(previous: NormalizedNode | undefined, next: Normali
     rssi: next.rssi ?? previous.rssi ?? null,
     snr: next.snr ?? previous.snr ?? null,
     role: next.role ?? previous.role,
-    trace: next.trace ?? previous.trace
+    trace: next.trace ?? previous.trace,
+    source: next.source ?? previous.source
   })
 }
 
@@ -542,12 +564,25 @@ function addMergedNode(
   if (mergedNode.id) aliases.set(`id:${mergedNode.id}`, finalKey)
 }
 
+function mergeTraceMetadataIntoNodes(merged: Map<string, NormalizedNode>, aliases: Map<string, string>) {
+  for (let packet of runtimeStore.traceRoutes.values()) {
+    let metadata = packet.nodeMetadata
+    if (!metadata || typeof metadata != 'object') continue
+    for (let [id, value] of Object.entries(metadata)) {
+      let node = normalizeNode({ id, ...(value || {}), source: 'traceMetadata' })
+      if (!node.id) continue
+      addMergedNode(merged, aliases, { source: 'traceMetadata', ...node })
+    }
+  }
+}
+
 export function getCurrentNodeSnapshot(): NormalizedNode[] {
   let merged = new Map<string, NormalizedNode>()
   let aliases = new Map<string, string>()
 
   for (let node of runtimeStore.nodes.values()) addMergedNode(merged, aliases, node)
   for (let node of nodes.value || []) addMergedNode(merged, aliases, normalizeNode(node))
+  mergeTraceMetadataIntoNodes(merged, aliases)
 
   runtimeStore.nodes.clear()
   for (let node of merged.values()) {
@@ -647,9 +682,9 @@ export function getPacketSnapshot(): NormalizedPacket[] {
 }
 
 function routeHasUsablePath(packet: NormalizedPacket): boolean {
-  if (packet.routeDiscovery && (packet.routeDiscovery.route.length >= 2 || packet.routeDiscovery.routeBack.length >= 2)) return true
-  if (packet.traceRoutes?.some((route) => route.nodes.length >= 2)) return true
-  return !!packet.traceRoute && packet.traceRoute.length >= 2
+  if (packet.routeDiscovery && (drawableRouteNodeIds(packet.routeDiscovery.route).length >= 2 || drawableRouteNodeIds(packet.routeDiscovery.routeBack).length >= 2)) return true
+  if (packet.traceRoutes?.some((route) => drawableRouteNodeIds(route.nodes).length >= 2)) return true
+  return !!packet.traceRoute && drawableRouteNodeIds(packet.traceRoute).length >= 2
 }
 
 function traceRouteKey(packet: NormalizedPacket): string {
@@ -681,9 +716,9 @@ function normalizedPacketFromNodeTrace(node: NormalizedNode, trace: any): Normal
   let routeDiscovery = includeRouteDiscoveryEndpoints(normalizeExistingRouteDiscovery(trace, trace?.$typeName == 'meshtastic.RouteDiscovery'), fromId, toId)
   let traceRoutes = buildTraceRoutes(routeDiscovery) ?? normalizeExistingTraceRoutes(trace?.traceRoutes)
   let traceRoute = normalizeRouteNodeIds(trace?.traceRoute ?? trace?.route ?? trace?.nodes)
-  if (!traceRoutes && traceRoute.length >= 2) traceRoutes = [{ direction: 'towards', nodes: traceRoute, snr: normalizeSnrArray(trace?.snr) }]
+  if (!traceRoutes && drawableRouteNodeIds(traceRoute).length >= 2) traceRoutes = [{ direction: 'towards', nodes: traceRoute, snr: normalizeSnrArray(trace?.snr) }]
   if (!traceRoute.length) traceRoute = traceRoutes?.find((route) => route.direction == 'towards')?.nodes ?? []
-  if (!traceRoutes && traceRoute.length < 2) return undefined
+  if (!traceRoutes && drawableRouteNodeIds(traceRoute).length < 2) return undefined
   return compact({
     id: trace?.id,
     rxTime: unixSecondsToIso(trace?.rxTime ?? trace?.time ?? node.lastHeardSec ?? node.lastHeard),
@@ -697,7 +732,7 @@ function normalizedPacketFromNodeTrace(node: NormalizedNode, trace: any): Normal
     type: 'traceroute',
     routeDiscovery,
     traceRoutes,
-    traceRoute: traceRoute.length >= 2 ? traceRoute : undefined,
+    traceRoute: drawableRouteNodeIds(traceRoute).length >= 2 ? traceRoute : undefined,
     raw: { node, trace }
   })
 }
