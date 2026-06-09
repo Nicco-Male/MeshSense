@@ -7,6 +7,7 @@ import { fromBinary } from '@bufbuild/protobuf'
 import { Protobuf } from '../../meshtastic-js/dist'
 import { address, channels, connectionStatus, messageHistory, nodes, packets, type Channel, type MeshPacket, type NodeInfo } from '../vars'
 import { getAllKeyValues } from './persistence'
+import { runtimeFlags } from './runtimeFlags'
 
 export type NormalizedNode = {
   num?: number
@@ -565,6 +566,7 @@ function addMergedNode(
 }
 
 function mergeTraceMetadataIntoNodes(merged: Map<string, NormalizedNode>, aliases: Map<string, string>) {
+  if (!runtimeFlags.enableTraceHistory) return
   for (let packet of runtimeStore.traceRoutes.values()) {
     let metadata = packet.nodeMetadata
     if (!metadata || typeof metadata != 'object') continue
@@ -597,7 +599,7 @@ export function getCurrentNodeSnapshot(): NormalizedNode[] {
 
 
 const maxPacketCacheSize = normalizeLimit(process.env.MESHSENSE_PUBLIC_API_PACKET_CACHE, 1000, 10000)
-const maxTraceCacheSize = normalizeLimit(process.env.MESHSENSE_PUBLIC_API_TRACE_CACHE, 1000, 10000)
+const maxTraceCacheSize = runtimeFlags.traceHistoryLimit
 
 function packetCacheKey(packet: NormalizedPacket): string {
   if (packet.id !== undefined && packet.id !== null && packet.id !== '') return `id:${packet.id}`
@@ -626,6 +628,7 @@ function rememberPacketInCache(packet: NormalizedPacket) {
 }
 
 function normalizeHistoricalPacket(packet: MeshPacket | any): NormalizedPacket | undefined {
+  if (!runtimeFlags.enableTraceHistory) return
   try {
     let normalized = normalizePacket(packet)
     rememberPacketInCache(normalized)
@@ -658,6 +661,13 @@ function normalizedPacketFromRouteCache(entry: { source: string; nodeNum: number
 }
 
 function bootstrapTraceHistory() {
+  if (!runtimeFlags.enableTraceHistory) {
+    runtimeStore.traceRoutes.clear()
+    runtimeStore.historyBootstrapped = true
+    runtimeStore.historySourceCount = 0
+    return
+  }
+
   let historicalPackets = [...(packets.value || []), ...(messageHistory.value || [])]
   for (let packet of historicalPackets) normalizeHistoricalPacket(packet)
   for (let entry of persistedRouteCacheEntries()) {
@@ -672,6 +682,15 @@ function bootstrapTraceHistory() {
 }
 
 export function ensureTraceHistoryBootstrapped(force = false) {
+  if (!runtimeFlags.enableTraceHistory) {
+    if (!runtimeStore.historyBootstrapped || force) {
+      runtimeStore.traceRoutes.clear()
+      runtimeStore.historyBootstrapped = true
+      runtimeStore.historySourceCount = 0
+    }
+    return
+  }
+
   if (runtimeStore.historyBootstrapped && !force && runtimeStore.historySourceCount == currentHistorySourceCount()) return
   bootstrapTraceHistory()
 }
@@ -697,6 +716,7 @@ function traceRouteKey(packet: NormalizedPacket): string {
 }
 
 function rememberTraceRoute(packet: NormalizedPacket) {
+  if (!runtimeFlags.enableTraceHistory) return
   if (!routeHasUsablePath(packet)) return
   let key = traceRouteKey(packet)
   runtimeStore.traceRoutes.delete(key)
@@ -738,6 +758,7 @@ function normalizedPacketFromNodeTrace(node: NormalizedNode, trace: any): Normal
 }
 
 function rememberNodeTrace(node: NormalizedNode) {
+  if (!runtimeFlags.enableTraceHistory) return
   if (!node.trace) return
   let traces = Array.isArray(node.trace) ? node.trace : [node.trace]
   for (let trace of traces) {
@@ -769,6 +790,7 @@ function enrichTracePacket(packet: NormalizedPacket): NormalizedPacket {
 }
 
 export function getTraceRouteSnapshot(): NormalizedPacket[] {
+  if (!runtimeFlags.enableTraceHistory) return []
   ensureTraceHistoryBootstrapped()
   for (let node of getCurrentNodeSnapshot()) rememberNodeTrace(node)
   return Array.from(runtimeStore.traceRoutes.values()).map(enrichTracePacket)
@@ -839,7 +861,12 @@ function normalizeChannel(channel: Channel | any) {
 }
 
 export function installPublicApi(app: Express, server: Server) {
-  ensureTraceHistoryBootstrapped()
+  if (!runtimeFlags.enablePublicApi) {
+    console.log('[api] Public API disabled by MESHSENSE_ENABLE_PUBLIC_API=false')
+    return
+  }
+
+  if (runtimeFlags.enableTraceHistory) ensureTraceHistoryBootstrapped()
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, service: 'meshsense-api', time: new Date().toISOString() })
   })
@@ -868,6 +895,7 @@ export function installPublicApi(app: Express, server: Server) {
   })
 
   app.get('/api/traces', (_req, res) => {
+    if (!runtimeFlags.enableTraceHistory) return res.json([])
     res.json(getTraceRouteSnapshot())
   })
 
@@ -897,7 +925,7 @@ export function installPublicApi(app: Express, server: Server) {
     for (let node of getCurrentNodeSnapshot()) {
       socket.send(JSON.stringify({ type: 'node_update', data: node }))
     }
-    socket.send(JSON.stringify({ type: 'trace_snapshot', data: getTraceRouteSnapshot() }))
+    if (runtimeFlags.enableTraceHistory) socket.send(JSON.stringify({ type: 'trace_snapshot', data: getTraceRouteSnapshot() }))
 
     socket.on('close', () => console.log('[api] WebSocket client disconnected', remoteAddress))
     socket.on('error', (error) => console.log('[api] WebSocket error', remoteAddress, String(error)))

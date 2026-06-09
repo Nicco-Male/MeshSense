@@ -7,6 +7,7 @@ import { State } from './state'
 // import { store } from './persistence'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { staticDirectory } from './paths'
+import { runtimeFlags } from './runtimeFlags'
 import getPort from 'get-port'
 import { IncomingMessage, Server, ServerResponse } from 'http'
 
@@ -137,6 +138,12 @@ export function finalize() {
     wss.send('error', String(err))
     return res.status(500).json(String(err))
   })
+
+  if (!runtimeFlags.enableInstancesDashboard) {
+    app.get('/instances.html', (_req, res) => {
+      res.status(404).send('The MeshSense instances dashboard is disabled by MESHSENSE_ENABLE_INSTANCES_DASHBOARD=false.')
+    })
+  }
 
   'DEV_UI_URL' in process.env ? enableDevProxy() : app.use(express.static(staticDirectory))
   console.log('Server listening', server.address())
