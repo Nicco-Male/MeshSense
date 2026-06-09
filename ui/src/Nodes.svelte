@@ -21,7 +21,7 @@
 
 <script lang="ts">
   import Card from './lib/Card.svelte'
-  import { formatTemp, formatTraceroutePaths, getCoordinates, getNodeName, hasAccess, displayFahrenheit, unixSecondsTimeAgo } from './lib/util'
+  import { formatTemp, formatTraceroutePaths, getCoordinates, getDisplayHops, getNodeName, hasAccess, displayFahrenheit, unixSecondsTimeAgo, formatHopTitle } from './lib/util'
   import axios from 'axios'
   import Modal from './lib/Modal.svelte'
   import { writable } from 'svelte/store'
@@ -122,8 +122,8 @@
             else bValue = $sortDirection === 'asc' ? 99 : -99
             break
           case 'hops':
-            aValue = a.hopsAway ?? 99
-            bValue = b.hopsAway ?? 99
+            aValue = getDisplayHops(a) ?? 99
+            bValue = getDisplayHops(b) ?? 99
             break
           case 'distance':
             const aCoords = getCoordinates(a)
@@ -299,7 +299,7 @@
                 <ObservedRF {node} />
               {:else}
                 <!-- Hops -->
-                <div title="{node.hopsAway} Hops Away" class="text-sm font-normal bg-black/20 rounded w-10 text-center">{node.num == $myNodeNum ? '-' : (node.hopsAway ?? '?')}</div>
+                <div title={formatHopTitle(node)} class="text-sm font-normal bg-black/20 rounded w-10 text-center">{node.num == $myNodeNum ? '-' : (getDisplayHops(node) ?? '?')}</div>
               {/if}
             </div>
           {:else}
@@ -361,7 +361,7 @@
               </div>
 
               <!-- Hops -->
-              <div title="{node.hopsAway} Hops Away" class="text-sm font-normal bg-black/20 rounded p-1 w-6 h-7 text-center">{node.num == $myNodeNum ? '-' : (node.hopsAway ?? '?')}</div>
+              <div title={formatHopTitle(node)} class="text-sm font-normal bg-black/20 rounded p-1 w-6 h-7 text-center">{node.num == $myNodeNum ? '-' : (getDisplayHops(node) ?? '?')}</div>
 
               <button title="Node Detail" on:click={() => (selectedNode = node)}>🔍</button>
               <!-- <button class="h-7 w-5" on:click={() => send(prompt('Enter message to send'), node.num)}>🗨</button> -->

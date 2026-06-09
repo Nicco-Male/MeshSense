@@ -1,8 +1,9 @@
-import { accessKey, apiHostname, broadcastId, lastFromRadio, nodes, packets, type NodeInfo, type TraceRouteData } from 'api/src/vars'
+import { accessKey, apiHostname, broadcastId, lastFromRadio, nodes, packets, type NodeInfo, type TraceRouteData, type TraceHops } from 'api/src/vars'
 import { tick } from 'svelte'
 import { derived, get, writable } from 'svelte/store'
 import { enableAudioAlerts } from '../Settings.svelte'
 import axios from 'axios'
+import { calculateTraceHops } from 'api/src/lib/traceHops'
 
 export let blockUserKey = writable(false)
 export const userKey = writable(localStorage.getItem('userKey') || '')
@@ -67,9 +68,31 @@ export function scrollToBottom(element: HTMLElement, force?, notifyUnseen: (reco
   })
 }
 
+
+export function getTraceHops(node: Partial<NodeInfo> | any): TraceHops | undefined {
+  return calculateTraceHops(node) ?? node?.traceHops
+}
+
+export function getDisplayHops(node: Partial<NodeInfo> | any): number | null {
+  return getTraceHops(node)?.min ?? node?.minHopsAway ?? node?.hopsAway ?? node?.hopsUsed ?? null
+}
+
+export function formatHopTitle(node: Partial<NodeInfo> | any) {
+  const traceHops = getTraceHops(node)
+  const parts = []
+  if (traceHops) {
+    parts.push(`TX ${traceHops.towards ?? '?'} / RX ${traceHops.back ?? '?'}`)
+  }
+  if (node?.hopsAway !== undefined && node?.hopsAway !== null) parts.push(`${node.hopsAway} Hops Away`)
+  return parts.join('\n') || 'Hops Away'
+}
+
 export function getCoordinates(node: NodeInfo | number) {
   if (typeof node == 'number') node = getNodeById(node)
-  if (!node?.position?.longitudeI) return [node?.approximatePosition?.longitude, node?.approximatePosition?.latitude]
+  if (!node?.position?.longitudeI) {
+    const approximatePosition = node?.approximatePosition || undefined
+    return [approximatePosition?.longitude, approximatePosition?.latitude]
+  }
   return [node?.position?.longitudeI / 10000000, node?.position?.latitudeI / 10000000]
 }
 
@@ -184,7 +207,7 @@ export function testPacket() {
     delayed: 0,
     viaMqtt: false,
     hopStart: 7,
-    publicKey: {},
+    publicKey: undefined,
     pkiEncrypted: false,
     data: {
       $typeName: 'meshtastic.Telemetry',
@@ -197,7 +220,7 @@ export function testPacket() {
         }
       }
     }
-  })
+  } as any)
 
   nodes.upsert({
     num: 3045257252,

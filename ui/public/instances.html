@@ -1770,6 +1770,54 @@
       return 0.38;
     }
 
+    function routeHopCandidate(route) {
+      if (!Array.isArray(route) || !route.length) return null;
+      return route.length;
+    }
+
+    function routeBackHopCandidate(routeBack) {
+      if (!Array.isArray(routeBack) || !routeBack.length) return null;
+      return Math.max(1, routeBack.length - 1);
+    }
+
+    function positiveCandidate(value) {
+      const numberValue = Number(value);
+      return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : null;
+    }
+
+    function finiteCandidate(value) {
+      const numberValue = Number(value);
+      return Number.isFinite(numberValue) ? numberValue : null;
+    }
+
+    function calculateTraceHops(nodeOrTrace) {
+      if (!nodeOrTrace || typeof nodeOrTrace !== "object") return undefined;
+      const trace = nodeOrTrace.trace && typeof nodeOrTrace.trace === "object" ? nodeOrTrace.trace : nodeOrTrace;
+      const towards = routeHopCandidate(trace?.route);
+      const back = routeBackHopCandidate(trace?.routeBack ?? trace?.back);
+      const candidates = [towards, back, positiveCandidate(nodeOrTrace.hopsAway)].filter(value => value !== null);
+      const min = candidates.length ? Math.min(...candidates) : finiteCandidate(nodeOrTrace.hopsAway);
+      if (min === null) return undefined;
+      return { towards, back, min };
+    }
+
+    function getTraceHops(node) {
+      return calculateTraceHops(node) ?? node?.traceHops;
+    }
+
+    function getDisplayHops(node) {
+      return getTraceHops(node)?.min ?? node?.minHopsAway ?? node?.hopsAway ?? node?.hopsUsed ?? null;
+    }
+
+    function formatHopTitle(node) {
+      const traceHops = getTraceHops(node);
+      const parts = [];
+      if (traceHops) parts.push(`TX ${traceHops.towards ?? "?"} / RX ${traceHops.back ?? "?"}`);
+      if (node?.hopsAway !== undefined && node?.hopsAway !== null) parts.push(`${node.hopsAway} Hops Away`);
+      if (node?.hopsUsed !== undefined && node?.hopsUsed !== null) parts.push(`Packet ${node.hopsUsed} / ${node.hopStart ?? node.hopLimit ?? "—"}`);
+      return parts.join("\n") || "Hops";
+    }
+
     function normalizeNode(raw, instance) {
       const node = { ...raw, raw };
       const id = nodeKey(node);
@@ -1783,6 +1831,7 @@
       node.instanceColor = instance.color;
       node._lastHeardMs = lastHeardMs(node);
       node._hasPosition = validLatLon(node);
+      node.traceHops = calculateTraceHops(node) ?? node.traceHops;
       return node;
     }
 
@@ -1820,6 +1869,9 @@
         snr: normalized.snr ?? prev.snr,
         hopLimit: normalized.hopLimit ?? prev.hopLimit,
         hopStart: normalized.hopStart ?? prev.hopStart,
+        hopsAway: normalized.hopsAway ?? prev.hopsAway,
+        trace: normalized.trace ?? prev.trace,
+        traceHops: normalized.traceHops ?? prev.traceHops,
         hopsUsed: normalized.hopsUsed ?? prev.hopsUsed,
         lastHeard: normalized.lastHeard || normalized.rxTime || prev.lastHeard,
         lastHeardSec: normalized.lastHeardSec ?? normalized.rxTimeSec ?? prev.lastHeardSec,
@@ -1909,7 +1961,7 @@
           <div class="popup-grid">
             <div><span>RSSI</span>${node.rssi ?? "—"}</div>
             <div><span>SNR</span>${node.snr ?? "—"}</div>
-            <div><span>Hop</span>${node.hopsUsed ?? "—"} / ${node.hopStart ?? node.hopLimit ?? "—"}</div>
+            <div title="${escapeHtml(formatHopTitle(node))}"><span>Hop</span>${getDisplayHops(node) ?? "—"}</div>
             <div><span>Visto</span>${formatAge(node._lastHeardMs)}</div>
             <div style="grid-column:1 / -1;"><span>Coordinate</span><span class="mono">${lat.toFixed(6)}, ${lon.toFixed(6)}</span></div>
           </div>
@@ -2097,7 +2149,7 @@
             <td>${instances || "—"}</td>
             <td>${formatAge(node._lastHeardMs)}</td>
             <td><span class="mono">${node.rssi ?? "—"} / ${node.snr ?? "—"}</span></td>
-            <td><span class="mono">${node.hopsUsed ?? "—"} / ${node.hopStart ?? node.hopLimit ?? "—"}</span></td>
+            <td><span class="mono" title="${escapeHtml(formatHopTitle(node))}">${getDisplayHops(node) ?? "—"}</span></td>
             <td>${coords}</td>
           </tr>
         `;
