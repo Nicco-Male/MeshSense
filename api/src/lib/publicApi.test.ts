@@ -7,6 +7,7 @@ import {
   normalizeDestinationId,
   normalizeNodeId,
   normalizePacket,
+  normalizeNode,
   getCurrentNodeSnapshot,
   getTraceRouteSnapshot,
   getPacketSnapshot,
@@ -60,6 +61,16 @@ assert.equal(normalized.rssi, null)
 assert.equal(normalized.snr, null)
 assert.equal(normalized.hasRadioMetrics, false)
 assert.equal(normalized.traceRoutes, undefined)
+
+const tracerouteVariant = normalizePacket({
+  id: 70,
+  rxTime: 1000,
+  app: 'TRACEROUTE_APP',
+  traceRoutes: [{ direction: 'towards', nodes: ['!00000001', '!00000002'], snr: [-12] }]
+})
+assert.equal(tracerouteVariant.portnum, 70)
+assert.equal(tracerouteVariant.app, 'TRACEROUTE_APP')
+assert.equal(filterPackets([tracerouteVariant], { portnum: 70 }).length, 1)
 
 const routeDiscoveryPayload = toBinary(
   Protobuf.Mesh.RouteDiscoverySchema,
@@ -147,6 +158,8 @@ assert.equal(snapshot[1].rssi, -90)
 assert.equal(snapshot[1].snr, 7)
 assert.equal(snapshot[1].latitude, 45.1234567)
 assert.equal(snapshot[1].longitude, 9.1234567)
+assert.equal(normalizeNode({ num: 3, latitude_i: 451000000, longitude_i: 91000000 }).latitude, 45.1)
+assert.equal(normalizeNode({ num: 3, position: { latitude: 45.2, longitude: 9.2 } }).longitude, 9.2)
 assert.deepEqual(snapshot[1].trace, { route: [0x1234abcd, 1] })
 assert.equal(runtimeStore.nodesSeen, 2)
 nodes.set([] as any)
