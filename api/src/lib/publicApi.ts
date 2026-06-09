@@ -6,6 +6,7 @@ import { parse } from 'url'
 import { fromBinary } from '@bufbuild/protobuf'
 import { Protobuf } from '../../meshtastic-js/dist'
 import { address, channels, connectionStatus, messageHistory, nodes, packets, type Channel, type MeshPacket, type NodeInfo } from '../vars'
+import { getAllKeyValues } from './persistence'
 
 export type NormalizedNode = {
   num?: number
@@ -58,6 +59,7 @@ export type NormalizedPacket = {
   routeDiscovery?: NormalizedRouteDiscovery
   traceRoutes?: NormalizedTraceRoute[]
   traceRoute?: string[]
+  nodeMetadata?: Record<string, Pick<NormalizedNode, 'id' | 'shortName' | 'longName' | 'latitude' | 'longitude'>>
   raw: any
 }
 
@@ -218,7 +220,7 @@ function normalizeSnrArray(snr?: unknown[]): number[] {
   return snr.map((value) => numeric(value)).filter((value): value is number => value !== undefined)
 }
 
-function normalizeExistingRouteDiscovery(value: any): NormalizedRouteDiscovery | undefined {
+function normalizeExistingRouteDiscovery(value: any, scaleSnr = false): NormalizedRouteDiscovery | undefined {
   if (!value || typeof value != 'object') return undefined
   let route = normalizeRouteNodeIds(value.route)
   let routeBack = normalizeRouteNodeIds(value.routeBack ?? value.back)
@@ -226,8 +228,8 @@ function normalizeExistingRouteDiscovery(value: any): NormalizedRouteDiscovery |
   return {
     route,
     routeBack,
-    snrTowards: normalizeSnrArray(value.snrTowards ?? value.snr),
-    snrBack: normalizeSnrArray(value.snrBack)
+    snrTowards: scaleSnr ? normalizeScaledSnr(value.snrTowards ?? value.snr) : normalizeSnrArray(value.snrTowards ?? value.snr),
+    snrBack: scaleSnr ? normalizeScaledSnr(value.snrBack) : normalizeSnrArray(value.snrBack)
   }
 }
 
@@ -294,10 +296,12 @@ function getPacketDecoded(packet: any) {
 }
 
 function getPacketPortnum(packet: any): number | string | undefined {
-  let portnum = getPacketDecoded(packet)?.portnum ?? packet?.portnum ?? packet?.data?.portnum ?? packet?.message?.portnum
+  let portnum = getPacketDecoded(packet)?.portnum ?? packet?.portnum ?? packet?.data?.portnum ?? packet?.Data?.portnum ?? packet?.raw?.decoded?.portnum ?? packet?.raw?.Data?.portnum ?? packet?.message?.portnum
   if (portnum !== undefined) return portnum
-  if (packet?.data?.$typeName == 'meshtastic.RouteDiscovery') return 70
-  if (packet?.trace || packet?.routeDiscovery) return 70
+  let appOrType = packet?.app ?? packet?.type ?? packet?.raw?.app ?? packet?.raw?.type
+  if (String(appOrType).toUpperCase() == 'TRACEROUTE_APP' || String(appOrType).toLowerCase() == 'traceroute') return 70
+  if (packet?.data?.$typeName == 'meshtastic.RouteDiscovery' || packet?.Data?.$typeName == 'meshtastic.RouteDiscovery') return 70
+  if (packet?.trace || packet?.routeDiscovery || packet?.traceRoutes || packet?.traceRoute) return 70
   return undefined
 }
 
@@ -334,13 +338,14 @@ export function normalizePacket(packet: MeshPacket | any): NormalizedPacket {
   let routeDiscovery = includeRouteDiscoveryEndpoints(
     decodeRouteDiscovery(safePacket, portnum) ??
       normalizeExistingRouteDiscovery(safePacket.routeDiscovery) ??
-      normalizeExistingRouteDiscovery(safePacket.data) ??
-      normalizeExistingRouteDiscovery(safePacket.trace),
+      normalizeExistingRouteDiscovery(safePacket.data, safePacket.data?.$typeName == 'meshtastic.RouteDiscovery') ??
+      normalizeExistingRouteDiscovery(safePacket.Data, safePacket.Data?.$typeName == 'meshtastic.RouteDiscovery') ??
+      normalizeExistingRouteDiscovery(safePacket.trace, safePacket.trace?.$typeName == 'meshtastic.RouteDiscovery'),
     fromId,
     toId
   )
-  let traceRoutes = buildTraceRoutes(routeDiscovery) ?? normalizeExistingTraceRoutes(safePacket.traceRoutes) ?? normalizeExistingTraceRoutes(safePacket.data?.traceRoutes)
-  let traceRoute = routeDiscovery?.route ?? normalizeRouteNodeIds(safePacket.traceRoute ?? safePacket.data?.traceRoute ?? safePacket.data?.route ?? safePacket.trace?.route)
+  let traceRoutes = buildTraceRoutes(routeDiscovery) ?? normalizeExistingTraceRoutes(safePacket.traceRoutes) ?? normalizeExistingTraceRoutes(safePacket.data?.traceRoutes) ?? normalizeExistingTraceRoutes(safePacket.Data?.traceRoutes)
+  let traceRoute = routeDiscovery?.route ?? normalizeRouteNodeIds(safePacket.traceRoute ?? safePacket.data?.traceRoute ?? safePacket.Data?.traceRoute ?? safePacket.data?.route ?? safePacket.Data?.route ?? safePacket.trace?.route)
   if (!traceRoute.length) traceRoute = traceRoutes?.find((route) => route.direction == 'towards')?.nodes ?? []
 
   return compact({
@@ -366,10 +371,25 @@ export function normalizePacket(packet: MeshPacket | any): NormalizedPacket {
   })
 }
 
+function coordinateValue(...values: any[]): number | undefined {
+  for (let value of values) {
+    let parsed = numeric(value)
+    if (parsed !== undefined) return parsed
+  }
+  return undefined
+}
+
+function coordinateIValue(...values: any[]): number | undefined {
+  let parsed = coordinateValue(...values)
+  return parsed === undefined ? undefined : parsed / 10000000
+}
+
 export function normalizeNode(node: Partial<NodeInfo> | any): NormalizedNode {
   let safeNode = jsonSafe(node)
-  let latitude = numeric(safeNode.position?.latitudeI) !== undefined ? numeric(safeNode.position.latitudeI) / 10000000 : numeric(safeNode.latitude ?? safeNode.approximatePosition?.latitude)
-  let longitude = numeric(safeNode.position?.longitudeI) !== undefined ? numeric(safeNode.position.longitudeI) / 10000000 : numeric(safeNode.longitude ?? safeNode.approximatePosition?.longitude)
+  let latitude = coordinateIValue(safeNode.position?.latitudeI, safeNode.latitudeI, safeNode.latitude_i, safeNode.user?.latitudeI, safeNode.user?.latitude_i) ??
+    coordinateValue(safeNode.latitude, safeNode.position?.latitude, safeNode.user?.latitude, safeNode.raw?.latitude, safeNode.approximatePosition?.latitude)
+  let longitude = coordinateIValue(safeNode.position?.longitudeI, safeNode.longitudeI, safeNode.longitude_i, safeNode.user?.longitudeI, safeNode.user?.longitude_i) ??
+    coordinateValue(safeNode.longitude, safeNode.position?.longitude, safeNode.user?.longitude, safeNode.raw?.longitude, safeNode.approximatePosition?.longitude)
   let lastHeardSec = parseTime(safeNode.lastHeard)
 
   return compact({
@@ -432,7 +452,7 @@ export function filterPackets(packetList: NormalizedPacket[], filters: PacketFil
     .filter((packet) => {
       if (from !== undefined && packet.from != from) return false
       if (to !== undefined && packet.to != to) return false
-      if (portnum !== undefined && String(packet.portnum) != portnum) return false
+      if (portnum !== undefined && String(packet.portnum) != portnum && String(packet.app) != portnum && String(packet.type) != portnum && String(getPacketPortnum(packet.raw)) != portnum) return false
       if (since !== undefined) {
         let rxTime = packetTime(packet)
         if (rxTime === undefined || rxTime < since) return false
@@ -581,13 +601,36 @@ function normalizeHistoricalPacket(packet: MeshPacket | any): NormalizedPacket |
   }
 }
 
+function persistedRouteCacheEntries(): Array<{ source: string; nodeNum: number; trace: any }> {
+  let persisted = getAllKeyValues()
+  let entries: Array<{ source: string; nodeNum: number; trace: any }> = []
+  for (let [source, value] of Object.entries(persisted)) {
+    if (!source.startsWith('routeCache-') || !value || typeof value != 'object') continue
+    for (let [nodeNum, trace] of Object.entries(value as Record<string, any>)) {
+      let parsedNodeNum = numeric(nodeNum)
+      if (parsedNodeNum !== undefined && trace && typeof trace == 'object') entries.push({ source, nodeNum: parsedNodeNum, trace })
+    }
+  }
+  return entries
+}
+
 function currentHistorySourceCount() {
-  return (packets.value?.length || 0) + (messageHistory.value?.length || 0)
+  return (packets.value?.length || 0) + (messageHistory.value?.length || 0) + persistedRouteCacheEntries().reduce((total, entry) => total + JSON.stringify(entry.trace).length + 1, 0)
+}
+
+function normalizedPacketFromRouteCache(entry: { source: string; nodeNum: number; trace: any }): NormalizedPacket | undefined {
+  return normalizedPacketFromNodeTrace({ num: entry.nodeNum, id: normalizeNodeId(entry.nodeNum) }, { ...entry.trace, from: entry.nodeNum, id: `${entry.source}:${entry.nodeNum}:${JSON.stringify(entry.trace)}` })
 }
 
 function bootstrapTraceHistory() {
   let historicalPackets = [...(packets.value || []), ...(messageHistory.value || [])]
   for (let packet of historicalPackets) normalizeHistoricalPacket(packet)
+  for (let entry of persistedRouteCacheEntries()) {
+    let normalized = normalizedPacketFromRouteCache(entry)
+    if (!normalized) continue
+    rememberPacketInCache(normalized)
+    rememberTraceRoute(normalized)
+  }
   for (let node of getCurrentNodeSnapshot()) rememberNodeTrace(node)
   runtimeStore.historyBootstrapped = true
   runtimeStore.historySourceCount = currentHistorySourceCount()
@@ -635,7 +678,7 @@ function normalizedPacketFromNodeTrace(node: NormalizedNode, trace: any): Normal
   let to = numeric(trace?.to)
   let fromId = normalizeNodeId(trace?.from ?? node.num, trace?.fromId ?? node.id)
   let toId = normalizeDestinationId(trace?.to) ?? normalizeNodeId(trace?.toId)
-  let routeDiscovery = includeRouteDiscoveryEndpoints(normalizeExistingRouteDiscovery(trace), fromId, toId)
+  let routeDiscovery = includeRouteDiscoveryEndpoints(normalizeExistingRouteDiscovery(trace, trace?.$typeName == 'meshtastic.RouteDiscovery'), fromId, toId)
   let traceRoutes = buildTraceRoutes(routeDiscovery) ?? normalizeExistingTraceRoutes(trace?.traceRoutes)
   let traceRoute = normalizeRouteNodeIds(trace?.traceRoute ?? trace?.route ?? trace?.nodes)
   if (!traceRoutes && traceRoute.length >= 2) traceRoutes = [{ direction: 'towards', nodes: traceRoute, snr: normalizeSnrArray(trace?.snr) }]
@@ -664,14 +707,36 @@ function rememberNodeTrace(node: NormalizedNode) {
   let traces = Array.isArray(node.trace) ? node.trace : [node.trace]
   for (let trace of traces) {
     let normalized = normalizedPacketFromNodeTrace(node, trace)
-    if (normalized) rememberTraceRoute(normalized)
+    if (normalized) {
+      rememberPacketInCache(normalized)
+      rememberTraceRoute(normalized)
+    }
   }
+}
+
+function nodeMetadataForRoutes(packet: NormalizedPacket) {
+  let ids = new Set<string>()
+  for (let route of packet.traceRoutes ?? []) for (let id of route.nodes) ids.add(id)
+  for (let id of packet.traceRoute ?? []) ids.add(id)
+  if (!ids.size) return undefined
+  let nodesById = new Map(getCurrentNodeSnapshot().map((node) => [node.id, node]))
+  let metadata: NormalizedPacket['nodeMetadata'] = {}
+  for (let id of ids) {
+    let node = nodesById.get(id)
+    if (!node) continue
+    metadata[id] = compact({ id: node.id, shortName: node.shortName, longName: node.longName, latitude: node.latitude, longitude: node.longitude })
+  }
+  return Object.keys(metadata).length ? metadata : undefined
+}
+
+function enrichTracePacket(packet: NormalizedPacket): NormalizedPacket {
+  return compact({ ...packet, nodeMetadata: packet.nodeMetadata ?? nodeMetadataForRoutes(packet) })
 }
 
 export function getTraceRouteSnapshot(): NormalizedPacket[] {
   ensureTraceHistoryBootstrapped()
   for (let node of getCurrentNodeSnapshot()) rememberNodeTrace(node)
-  return Array.from(runtimeStore.traceRoutes.values())
+  return Array.from(runtimeStore.traceRoutes.values()).map(enrichTracePacket)
 }
 
 export function recordPacket(packet: MeshPacket | any) {

@@ -1314,6 +1314,7 @@
           connectedAt: null,
           localNodeIds: new Set(),
           traceKeys: new Set(),
+          traceStats: { tracesLoaded: 0, routeCount: 0, totalSegments: 0, drawableSegments: 0, missingNodeIds: [], missingCoordinates: [] },
         });
       }
       return state.instanceRuntime.get(instanceId);
@@ -1667,16 +1668,45 @@
       return Number.isFinite(parsed) ? parsed : Date.now();
     }
 
+    function upsertTraceNodeMetadata(packet, instance) {
+      const metadata = packet?.nodeMetadata;
+      if (!metadata || typeof metadata !== "object") return;
+      for (const [id, node] of Object.entries(metadata)) {
+        if (!node || typeof node !== "object") continue;
+        upsertNode({ id, ...node }, instance);
+      }
+    }
+
+    function tracePacketKey(packet, route) {
+      if (packet?.id !== undefined && packet?.id !== null && packet?.id !== "") return `id:${packet.id}:${route.direction}:${route.nodes.join(">")}`;
+      return [packet?.fromId || packet?.from || "", packet?.toId || packet?.to || "", packet?.rxTimeSec || packet?.rxTime || "", route.direction, route.nodes.join(">")].join(":");
+    }
+
     function processTracePackets(payload, instance) {
       const packets = Array.isArray(payload) ? payload : (Array.isArray(payload?.data) ? payload.data : []);
       let added = 0;
+      const seen = new Set();
       for (const packet of packets) {
-        if (processPacketEdges(packet, instance)) added += 1;
+        upsertTraceNodeMetadata(packet, instance);
+        for (const route of extractTraceRoutes(packet || {})) {
+          const key = tracePacketKey(packet, route);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          addEdge("trace", instance, route.nodes, {
+            packetId: packet.id,
+            direction: route.direction,
+            snr: route.snr,
+            lastSeen: packetSeenMs(packet),
+          });
+          added += 1;
+        }
       }
+      updateTraceDiagnostics(instance);
       return added;
     }
 
     function processPacketEdges(packet, instance) {
+      upsertTraceNodeMetadata(packet, instance);
       let added = 0;
       for (const route of extractTraceRoutes(packet || {})) {
         addEdge("trace", instance, route.nodes, {
@@ -1687,7 +1717,42 @@
         });
         added += 1;
       }
+      if (added) updateTraceDiagnostics(instance);
       return added;
+    }
+
+    function updateTraceDiagnostics(instance) {
+      const rt = getRuntime(instance.id);
+      const missingNodeIds = new Set();
+      const missingCoordinates = new Set();
+      let routeCount = 0;
+      let totalSegments = 0;
+      let drawableSegments = 0;
+
+      for (const edge of state.edges.values()) {
+        if (edge.kind !== "trace" || edge.instanceId !== instance.id) continue;
+        routeCount += 1;
+        for (let index = 0; index < edge.ids.length - 1; index += 1) {
+          totalSegments += 1;
+          const fromNode = findNodeById(edge.ids[index], instance.id);
+          const toNode = findNodeById(edge.ids[index + 1], instance.id);
+          if (!fromNode) missingNodeIds.add(edge.ids[index]);
+          if (!toNode) missingNodeIds.add(edge.ids[index + 1]);
+          if (fromNode && !validLatLon(fromNode)) missingCoordinates.add(edge.ids[index]);
+          if (toNode && !validLatLon(toNode)) missingCoordinates.add(edge.ids[index + 1]);
+          if (validLatLon(fromNode) && validLatLon(toNode)) drawableSegments += 1;
+        }
+      }
+
+      rt.traceStats = {
+        tracesLoaded: rt.traceKeys.size,
+        routeCount,
+        totalSegments,
+        drawableSegments,
+        missingNodeIds: Array.from(missingNodeIds).sort(),
+        missingCoordinates: Array.from(missingCoordinates).sort(),
+      };
+      console.debug("MeshSense trace diagnostics", instance.name, rt.traceStats);
     }
 
 
@@ -2145,12 +2210,32 @@
       }
     }
 
+    function packetList(payload) {
+      return Array.isArray(payload) ? payload : (Array.isArray(payload?.data) ? payload.data : []);
+    }
+
+    function hasTraceRouteData(packet) {
+      return extractTraceRoutes(packet || {}).length > 0;
+    }
+
     async function fetchTracePackets(instance) {
+      const combined = [];
+      let tracesFailed = false;
       try {
-        return await fetchJson(instance, "/api/traces");
+        combined.push(...packetList(await fetchJson(instance, "/api/traces")));
       } catch (err) {
-        return await fetchJson(instance, "/api/packets?portnum=70");
+        tracesFailed = true;
       }
+
+      const traceRoutes = combined.reduce((count, packet) => count + extractTraceRoutes(packet || {}).length, 0);
+      if (tracesFailed || traceRoutes === 0 || combined.some(packet => !hasTraceRouteData(packet))) {
+        try {
+          combined.push(...packetList(await fetchJson(instance, "/api/packets?portnum=70")));
+        } catch (err) {
+          if (tracesFailed) throw err;
+        }
+      }
+      return combined;
     }
 
     async function refreshInstance(instance) {
@@ -2182,6 +2267,8 @@
 
         if (tracesPayload.status === "fulfilled") {
           const count = processTracePackets(tracesPayload.value, instance);
+          const stats = rt.traceStats;
+          log(`${instance.name}: traces loaded=${stats.tracesLoaded} routes=${stats.routeCount} segments=${stats.totalSegments} drawable=${stats.drawableSegments} missing_nodes=${stats.missingNodeIds.length} missing_positions=${stats.missingCoordinates.length}`);
           if (count) rt.lastEvent = `traces ${count}`;
         }
 
@@ -2227,6 +2314,7 @@
 
             if (msg.type === "node_update" && msg.data) {
               upsertNode(msg.data, instance);
+              updateTraceDiagnostics(instance);
             }
 
             if (msg.type === "trace_snapshot") {
