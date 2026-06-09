@@ -1313,6 +1313,7 @@
           lastError: null,
           connectedAt: null,
           localNodeIds: new Set(),
+          traceKeys: new Set(),
         });
       }
       return state.instanceRuntime.get(instanceId);
@@ -1561,24 +1562,30 @@
       }
     }
 
-    function edgeKey(kind, instanceId, ids) {
-      return `${kind}:${instanceId}:${ids.join(">")}`;
+    function edgeKey(kind, instanceId, ids, direction = "towards") {
+      return `${kind}:${instanceId}:${direction}:${ids.join(">")}`;
     }
 
     function addEdge(kind, instance, ids, meta = {}) {
       const clean = ids.map(normalizeNodeId).filter(Boolean);
       if (clean.length < 2) return;
-      const key = edgeKey(kind, instance.id, clean);
-      state.edges.set(key, {
+      const direction = meta.direction === "back" ? "back" : "towards";
+      const key = edgeKey(kind, instance.id, clean, direction);
+      const previous = state.edges.get(key);
+      const lastSeen = meta.lastSeen || previous?.lastSeen || Date.now();
+      const edge = {
         key,
         kind,
         instanceId: instance.id,
         instanceName: instance.name,
         color: instance.color,
         ids: clean,
-        lastSeen: Date.now(),
+        direction,
+        lastSeen,
         ...meta,
-      });
+      };
+      state.edges.set(key, edge);
+      getRuntime(instance.id).traceKeys.add(key);
     }
 
     function findNodeById(id, instanceId = null) {
@@ -1586,7 +1593,7 @@
       if (!clean) return null;
       if (instanceId) {
         const node = state.nodesByInstance.get(instanceId)?.get(clean);
-        if (node) return node;
+        if (node && validLatLon(node)) return node;
       }
       for (const nodes of state.nodesByInstance.values()) {
         const node = nodes.get(clean);
@@ -1635,14 +1642,33 @@
       return routes;
     }
 
+    function packetSeenMs(packet) {
+      if (Number.isFinite(Number(packet?.rxTimeSec))) return Number(packet.rxTimeSec) * 1000;
+      const parsed = packet?.rxTime ? Date.parse(packet.rxTime) : NaN;
+      return Number.isFinite(parsed) ? parsed : Date.now();
+    }
+
+    function processTracePackets(payload, instance) {
+      const packets = Array.isArray(payload) ? payload : (Array.isArray(payload?.data) ? payload.data : []);
+      let added = 0;
+      for (const packet of packets) {
+        if (processPacketEdges(packet, instance)) added += 1;
+      }
+      return added;
+    }
+
     function processPacketEdges(packet, instance) {
-      for (const route of extractTraceRoutes(packet)) {
+      let added = 0;
+      for (const route of extractTraceRoutes(packet || {})) {
         addEdge("trace", instance, route.nodes, {
           packetId: packet.id,
           direction: route.direction,
           snr: route.snr,
+          lastSeen: packetSeenMs(packet),
         });
+        added += 1;
       }
+      return added;
     }
 
 
@@ -1650,7 +1676,6 @@
       if (!state.traceLayer) return;
       const enabled = !el.lines || el.lines.checked;
       const alive = new Set();
-      const ttl = 6 * 60 * 60 * 1000;
 
       if (!enabled) {
         state.traceLayer.clearLayers();
@@ -1661,47 +1686,50 @@
       rebuildMergedNodes();
 
       for (const [key, edge] of state.edges) {
-        if (Date.now() - edge.lastSeen > ttl) {
-          state.edges.delete(key);
-          continue;
-        }
-
         if (edge.kind !== "trace") continue;
 
-        const latlngs = edge.ids.map(id => findNodeById(id, edge.instanceId)).filter(validLatLon).map(node => [Number(node.latitude), Number(node.longitude)]);
-        if (latlngs.length < 2) continue;
-        alive.add(key);
-
-        const isTrace = edge.kind === "trace";
         const style = {
           pane: "tracePane",
-          color: isTrace ? "#ff7a1a" : "#3b82f6",
-          weight: isTrace ? 4 : 2,
-          opacity: isTrace ? 0.92 : 0.50,
-          dashArray: isTrace ? null : "8 8",
+          color: "#ff7a1a",
+          weight: 4,
+          opacity: 0.92,
+          dashArray: null,
           lineCap: "round",
           lineJoin: "round",
           className: "trace-line",
         };
 
-        let line = state.edgeLines.get(key);
-        if (!line) {
-          line = L.polyline(latlngs, style).addTo(state.traceLayer);
-          state.edgeLines.set(key, line);
-        } else {
-          line.setLatLngs(latlngs);
-          line.setStyle(style);
-        }
-
         const names = edge.ids.map(id => displayNodeName(findNodeById(id, edge.instanceId) || { id })).join(" → ");
-        line.bindPopup(`
-          <div class="popup">
-            <h3>${edge.kind === "trace" ? "Traceroute" : "Packet path"}</h3>
-            <div class="muted">${escapeHtml(edge.instanceName || "Istanza")}</div>
-            <div style="margin-top:8px;" class="mono">${escapeHtml(names)}</div>
-            <div style="margin-top:8px;" class="muted">${formatAge(edge.lastSeen)}</div>
-          </div>
-        `);
+        for (let index = 0; index < edge.ids.length - 1; index += 1) {
+          const fromNode = findNodeById(edge.ids[index], edge.instanceId);
+          const toNode = findNodeById(edge.ids[index + 1], edge.instanceId);
+          if (!validLatLon(fromNode) || !validLatLon(toNode)) continue;
+
+          const segmentKey = `${key}:segment:${index}`;
+          const latlngs = [
+            [Number(fromNode.latitude), Number(fromNode.longitude)],
+            [Number(toNode.latitude), Number(toNode.longitude)],
+          ];
+          alive.add(segmentKey);
+
+          let line = state.edgeLines.get(segmentKey);
+          if (!line) {
+            line = L.polyline(latlngs, style).addTo(state.traceLayer);
+            state.edgeLines.set(segmentKey, line);
+          } else {
+            line.setLatLngs(latlngs);
+            line.setStyle(style);
+          }
+
+          line.bindPopup(`
+            <div class="popup">
+              <h3>Traceroute</h3>
+              <div class="muted">${escapeHtml(edge.instanceName || "Istanza")} · ${escapeHtml(edge.direction || "towards")}</div>
+              <div style="margin-top:8px;" class="mono">${escapeHtml(names)}</div>
+              <div style="margin-top:8px;" class="muted">${formatAge(edge.lastSeen)}</div>
+            </div>
+          `);
+        }
       }
 
       for (const [key, line] of state.edgeLines) {
@@ -2098,6 +2126,14 @@
       }
     }
 
+    async function fetchTracePackets(instance) {
+      try {
+        return await fetchJson(instance, "/api/traces");
+      } catch (err) {
+        return await fetchJson(instance, "/api/packets?portnum=70");
+      }
+    }
+
     async function refreshInstance(instance) {
       const rt = getRuntime(instance.id);
       try {
@@ -2105,10 +2141,11 @@
         rt.lastError = null;
         renderAll();
 
-        const [health, status, nodesPayload] = await Promise.allSettled([
+        const [health, status, nodesPayload, tracesPayload] = await Promise.allSettled([
           fetchJson(instance, "/api/health"),
           fetchJson(instance, "/api/status"),
           fetchJson(instance, "/api/nodes"),
+          fetchTracePackets(instance),
         ]);
 
         if (health.status === "fulfilled") rt.health = health.value;
@@ -2122,6 +2159,11 @@
           for (const node of nodes) {
             upsertNode(node, instance);
           }
+        }
+
+        if (tracesPayload.status === "fulfilled") {
+          const count = processTracePackets(tracesPayload.value, instance);
+          if (count) rt.lastEvent = `traces ${count}`;
         }
 
         rt.status = "online";
@@ -2168,6 +2210,11 @@
               upsertNode(msg.data, instance);
             }
 
+            if (msg.type === "trace_snapshot") {
+              const count = processTracePackets(msg.data, instance);
+              if (count) rt.lastEvent = `trace_snapshot ${count}`;
+            }
+
             if (msg.type === "packet_rx" && msg.data) {
               rt.packetCount += 1;
               const packet = msg.data;
@@ -2188,8 +2235,8 @@
                   hopStart: packet.hopStart,
                   hopsUsed: packet.hopsUsed,
                 }, instance);
-                processPacketEdges(packet, instance);
               }
+              processPacketEdges(packet, instance);
             }
 
             if (msg.type === "message_rx") {
@@ -2244,6 +2291,9 @@
       state.instances = state.instances.filter(item => item.id !== instance.id);
       state.instanceRuntime.delete(instance.id);
       state.nodesByInstance.delete(instance.id);
+      for (const [key, edge] of state.edges) {
+        if (edge.instanceId === instance.id) state.edges.delete(key);
+      }
       saveInstances();
       log(`${instance.name}: rimossa`);
       renderAll();
@@ -2283,6 +2333,9 @@
 
       state.instanceRuntime.clear();
       state.nodesByInstance.clear();
+      state.edges.clear();
+      state.edgeLines.clear();
+      if (state.traceLayer) state.traceLayer.clearLayers();
       saveInstances();
       state.initialCentered = false;
       log(`Importate ${state.instances.length} istanze`);

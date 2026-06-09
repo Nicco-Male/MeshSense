@@ -94,6 +94,7 @@ type RuntimeStore = {
   packets: NormalizedPacket[]
   messages: NormalizedMessage[]
   nodes: Map<number | string, NormalizedNode>
+  traceRoutes: Map<string, NormalizedPacket>
 }
 
 export const publicApiEvents = new EventEmitter<{
@@ -108,7 +109,8 @@ export const runtimeStore: RuntimeStore = {
   nodesSeen: 0,
   packets: [],
   messages: [],
-  nodes: new Map()
+  nodes: new Map(),
+  traceRoutes: new Map()
 }
 
 function jsonSafe<T>(value: T): T {
@@ -207,6 +209,40 @@ function normalizeScaledSnr(snr?: unknown[]): number[] {
   return snr.map((value) => numeric(value)).filter((value): value is number => value !== undefined).map((value) => value / 4)
 }
 
+function normalizeSnrArray(snr?: unknown[]): number[] {
+  if (!Array.isArray(snr)) return []
+  return snr.map((value) => numeric(value)).filter((value): value is number => value !== undefined)
+}
+
+function normalizeExistingRouteDiscovery(value: any): NormalizedRouteDiscovery | undefined {
+  if (!value || typeof value != 'object') return undefined
+  let route = normalizeRouteNodeIds(value.route)
+  let routeBack = normalizeRouteNodeIds(value.routeBack ?? value.back)
+  if (route.length < 2 && routeBack.length < 2) return undefined
+  return {
+    route,
+    routeBack,
+    snrTowards: normalizeSnrArray(value.snrTowards ?? value.snr),
+    snrBack: normalizeSnrArray(value.snrBack)
+  }
+}
+
+function normalizeExistingTraceRoutes(value: any): NormalizedTraceRoute[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  let routes = value
+    .map((route): NormalizedTraceRoute | undefined => {
+      let nodes = normalizeRouteNodeIds(route?.nodes ?? route?.route)
+      if (nodes.length < 2) return undefined
+      return {
+        direction: route?.direction == 'back' ? 'back' : 'towards',
+        nodes,
+        snr: normalizeSnrArray(route?.snr)
+      }
+    })
+    .filter((route): route is NormalizedTraceRoute => !!route)
+  return routes.length ? routes : undefined
+}
+
 function decodeRouteDiscovery(packet: any, portnum?: number | string): NormalizedRouteDiscovery | undefined {
   if (numeric(portnum) != 70) return undefined
 
@@ -237,7 +273,7 @@ function getPacketDecoded(packet: any) {
 }
 
 function getPacketPortnum(packet: any): number | string | undefined {
-  return getPacketDecoded(packet)?.portnum ?? packet?.data?.portnum ?? packet?.message?.portnum
+  return getPacketDecoded(packet)?.portnum ?? packet?.portnum ?? packet?.data?.portnum ?? packet?.message?.portnum
 }
 
 function getPacketAppType(portnum?: number | string, decoded?: any) {
@@ -268,17 +304,19 @@ export function normalizePacket(packet: MeshPacket | any): NormalizedPacket {
   let to = numeric(safePacket.to)
   let rxTimeSec = parseTime(safePacket.rxTime)
   let radioMetrics = normalizeRadioMetrics(numeric(safePacket.rxRssi ?? safePacket.rssi), numeric(safePacket.rxSnr ?? safePacket.snr))
-  let routeDiscovery = decodeRouteDiscovery(safePacket, portnum)
-  let traceRoutes = buildTraceRoutes(routeDiscovery)
+  let routeDiscovery = decodeRouteDiscovery(safePacket, portnum) ?? normalizeExistingRouteDiscovery(safePacket.routeDiscovery)
+  let traceRoutes = buildTraceRoutes(routeDiscovery) ?? normalizeExistingTraceRoutes(safePacket.traceRoutes)
+  let traceRoute = routeDiscovery?.route ?? normalizeRouteNodeIds(safePacket.traceRoute)
+  if (!traceRoute.length) traceRoute = traceRoutes?.find((route) => route.direction == 'towards')?.nodes ?? []
 
   return compact({
     id: safePacket.id,
     rxTime: unixSecondsToIso(safePacket.rxTime),
     rxTimeSec: rxTimeSec ?? null,
     from,
-    fromId: normalizeNodeId(from),
+    fromId: normalizeNodeId(from, safePacket.fromId),
     to,
-    toId: normalizeDestinationId(to),
+    toId: normalizeDestinationId(to) ?? normalizeNodeId(safePacket.toId),
     channel: safePacket.channel,
     portnum,
     app,
@@ -289,7 +327,7 @@ export function normalizePacket(packet: MeshPacket | any): NormalizedPacket {
     hopsUsed: calculateHopsUsed(hopStart, hopLimit),
     routeDiscovery,
     traceRoutes,
-    traceRoute: routeDiscovery?.route,
+    traceRoute: traceRoute.length >= 2 ? traceRoute : undefined,
     raw: safePacket
   })
 }
@@ -467,12 +505,80 @@ export function getCurrentNodeSnapshot(): NormalizedNode[] {
   return Array.from(merged.values()).sort((a, b) => (b.lastHeardSec ?? 0) - (a.lastHeardSec ?? 0))
 }
 
+
+function routeHasUsablePath(packet: NormalizedPacket): boolean {
+  if (packet.routeDiscovery && (packet.routeDiscovery.route.length >= 2 || packet.routeDiscovery.routeBack.length >= 2)) return true
+  if (packet.traceRoutes?.some((route) => route.nodes.length >= 2)) return true
+  return !!packet.traceRoute && packet.traceRoute.length >= 2
+}
+
+function traceRouteKey(packet: NormalizedPacket): string {
+  if (packet.id !== undefined && packet.id !== null && packet.id !== '') return `id:${packet.id}`
+  let routeParts = [
+    ...(packet.traceRoutes ?? []).map((route) => `${route.direction}:${route.nodes.join('>')}`),
+    packet.traceRoute?.length ? `towards:${packet.traceRoute.join('>')}` : ''
+  ].filter(Boolean)
+  return [packet.fromId ?? packet.from ?? '', packet.toId ?? packet.to ?? '', packet.rxTimeSec ?? packet.rxTime ?? '', routeParts.join('|')].join(':')
+}
+
+function rememberTraceRoute(packet: NormalizedPacket) {
+  if (!routeHasUsablePath(packet)) return
+  let key = traceRouteKey(packet)
+  runtimeStore.traceRoutes.delete(key)
+  runtimeStore.traceRoutes.set(key, packet)
+  while (runtimeStore.traceRoutes.size > 500) {
+    let oldestKey = runtimeStore.traceRoutes.keys().next().value
+    if (oldestKey === undefined) break
+    runtimeStore.traceRoutes.delete(oldestKey)
+  }
+}
+
+function normalizedPacketFromNodeTrace(node: NormalizedNode, trace: any): NormalizedPacket | undefined {
+  let routeDiscovery = normalizeExistingRouteDiscovery(trace)
+  let traceRoutes = buildTraceRoutes(routeDiscovery) ?? normalizeExistingTraceRoutes(trace?.traceRoutes)
+  let traceRoute = normalizeRouteNodeIds(trace?.traceRoute ?? trace?.route ?? trace?.nodes)
+  if (!traceRoutes && traceRoute.length >= 2) traceRoutes = [{ direction: 'towards', nodes: traceRoute, snr: normalizeSnrArray(trace?.snr) }]
+  if (!traceRoute.length) traceRoute = traceRoutes?.find((route) => route.direction == 'towards')?.nodes ?? []
+  if (!traceRoutes && traceRoute.length < 2) return undefined
+  return compact({
+    id: trace?.id,
+    rxTime: unixSecondsToIso(trace?.rxTime ?? trace?.time ?? node.lastHeardSec ?? node.lastHeard),
+    rxTimeSec: parseTime(trace?.rxTime ?? trace?.time ?? node.lastHeardSec ?? node.lastHeard) ?? null,
+    from: numeric(trace?.from ?? node.num),
+    fromId: normalizeNodeId(trace?.from ?? node.num, trace?.fromId ?? node.id),
+    to: numeric(trace?.to),
+    toId: normalizeDestinationId(trace?.to) ?? normalizeNodeId(trace?.toId),
+    portnum: 70,
+    app: 'TRACEROUTE_APP',
+    type: 'traceroute',
+    routeDiscovery,
+    traceRoutes,
+    traceRoute: traceRoute.length >= 2 ? traceRoute : undefined,
+    raw: { node, trace }
+  })
+}
+
+function rememberNodeTrace(node: NormalizedNode) {
+  if (!node.trace) return
+  let traces = Array.isArray(node.trace) ? node.trace : [node.trace]
+  for (let trace of traces) {
+    let normalized = normalizedPacketFromNodeTrace(node, trace)
+    if (normalized) rememberTraceRoute(normalized)
+  }
+}
+
+export function getTraceRouteSnapshot(): NormalizedPacket[] {
+  for (let node of getCurrentNodeSnapshot()) rememberNodeTrace(node)
+  return Array.from(runtimeStore.traceRoutes.values())
+}
+
 export function recordPacket(packet: MeshPacket | any) {
   try {
     let normalized = normalizePacket(packet)
     runtimeStore.packets.push(normalized)
     while (runtimeStore.packets.length > 1000) runtimeStore.packets.shift()
     runtimeStore.packetsSeen += 1
+    rememberTraceRoute(normalized)
     runtimeStore.lastPacketAt = new Date().toISOString()
     console.log('[api] packet_rx', normalized.id ?? '(no id)', normalized.from ? `from ${normalized.from}` : '')
     publicApiEvents.emit('packet_rx', normalized)
@@ -496,6 +602,8 @@ export function recordNodeUpdate(node: Partial<NodeInfo> | any) {
     let wasKnown = existingEntry !== undefined
     runtimeStore.nodes.set(storeKey, mergeNormalizedNode(existingEntry?.[1], normalized))
     runtimeStore.nodesSeen = runtimeStore.nodes.size
+    let storedNode = runtimeStore.nodes.get(storeKey)
+    if (storedNode) rememberNodeTrace(storedNode)
     if (!wasKnown) console.log('[api] node discovered', normalized.id ?? normalized.num)
     publicApiEvents.emit('node_update', runtimeStore.nodes.get(storeKey))
     return normalized
@@ -557,6 +665,10 @@ export function installPublicApi(app: Express, server: Server) {
     res.json(filterPackets(runtimeStore.packets, req.query as PacketFilters))
   })
 
+  app.get('/api/traces', (_req, res) => {
+    res.json(getTraceRouteSnapshot())
+  })
+
   app.get('/api/messages', (req, res) => {
     res.json(filterMessages(runtimeStore.messages, req.query as PacketFilters))
   })
@@ -583,6 +695,7 @@ export function installPublicApi(app: Express, server: Server) {
     for (let node of getCurrentNodeSnapshot()) {
       socket.send(JSON.stringify({ type: 'node_update', data: node }))
     }
+    socket.send(JSON.stringify({ type: 'trace_snapshot', data: getTraceRouteSnapshot() }))
 
     socket.on('close', () => console.log('[api] WebSocket client disconnected', remoteAddress))
     socket.on('error', (error) => console.log('[api] WebSocket error', remoteAddress, String(error)))

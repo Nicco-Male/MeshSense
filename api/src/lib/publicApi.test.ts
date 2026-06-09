@@ -8,7 +8,9 @@ import {
   normalizeNodeId,
   normalizePacket,
   getCurrentNodeSnapshot,
+  getTraceRouteSnapshot,
   normalizeRadioMetrics,
+  recordPacket,
   runtimeStore,
   unixSecondsToIso,
   type NormalizedPacket
@@ -87,6 +89,25 @@ assert.deepEqual(traceroutePacket.traceRoutes, [
 ])
 assert.deepEqual(traceroutePacket.traceRoute, ['!1234abcd', '!00000001'])
 
+runtimeStore.traceRoutes.clear()
+recordPacket({
+  id: 100,
+  rxTime: 1001,
+  from: 0x1234abcd,
+  to: 0x00000002,
+  payloadVariant: { case: 'decoded', value: { portnum: 70, payload: routeDiscoveryPayload } }
+})
+assert.equal(getTraceRouteSnapshot().length, 1)
+assert.deepEqual(getTraceRouteSnapshot()[0].traceRoutes?.[0].nodes, ['!1234abcd', '!00000001'])
+recordPacket({
+  id: 100,
+  rxTime: 1002,
+  from: 0x1234abcd,
+  to: 0x00000002,
+  payloadVariant: { case: 'decoded', value: { portnum: 70, payload: routeDiscoveryPayload } }
+})
+assert.equal(getTraceRouteSnapshot().length, 1)
+runtimeStore.traceRoutes.clear()
 
 runtimeStore.nodes.clear()
 runtimeStore.nodes.set(0x1234abcd, {
