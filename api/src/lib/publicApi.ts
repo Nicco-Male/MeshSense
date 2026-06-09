@@ -340,7 +340,7 @@ export function normalizeNode(node: Partial<NodeInfo> | any): NormalizedNode {
   let latitude = numeric(safeNode.position?.latitudeI) !== undefined ? numeric(safeNode.position.latitudeI) / 10000000 : numeric(safeNode.latitude ?? safeNode.approximatePosition?.latitude)
   let longitude = numeric(safeNode.position?.longitudeI) !== undefined ? numeric(safeNode.position.longitudeI) / 10000000 : numeric(safeNode.longitude ?? safeNode.approximatePosition?.longitude)
   let lastHeardSec = parseTime(safeNode.lastHeard)
-  let traceHops = calculateTraceHops(safeNode) ?? safeNode.traceHops
+  let traceHops = safeNode.traceHops ?? calculateTraceHops(safeNode.trace)
 
   return compact({
     num: numeric(safeNode.num),

@@ -6,40 +6,22 @@ export type TraceHops = {
   min: number | null
 }
 
-function routeHopCandidate(route?: unknown[]): number | null {
+function validRouteHopCount(route?: unknown[], direction: 'towards' | 'back' = 'towards'): number | null {
   if (!Array.isArray(route) || route.length == 0) return null
-  return route.length
+
+  // Meshtastic node traces expose the forward path as the useful link count
+  // directly in `route`, while `routeBack` includes one endpoint that route-line
+  // drawing already treats separately. Do not synthesize hops from fake RX links.
+  return direction == 'back' ? Math.max(route.length - 1, 0) : route.length
 }
 
-function routeBackHopCandidate(routeBack?: unknown[]): number | null {
-  if (!Array.isArray(routeBack) || routeBack.length == 0) return null
+export function calculateTraceHops(trace?: TraceRouteData | any): TraceHops | undefined {
+  if (!trace || typeof trace != 'object') return undefined
 
-  // Some RouteDiscovery return paths include an endpoint that route-line drawing
-  // treats separately. Account for that without ever turning a real, non-empty
-  // traceroute into a zero-hop candidate.
-  return Math.max(1, routeBack.length - 1)
-}
-
-function positiveCandidate(value: unknown): number | null {
-  let numericValue = Number(value)
-  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null
-}
-
-function finiteCandidate(value: unknown): number | null {
-  let numericValue = Number(value)
-  return Number.isFinite(numericValue) ? numericValue : null
-}
-
-export function calculateTraceHops(nodeOrTrace?: (Partial<{ trace: TraceRouteData; hopsAway: unknown }> & Record<string, any>) | TraceRouteData | any, hopsAway?: unknown): TraceHops | undefined {
-  if (!nodeOrTrace || typeof nodeOrTrace != 'object') return undefined
-
-  let trace = nodeOrTrace.trace && typeof nodeOrTrace.trace == 'object' ? nodeOrTrace.trace : nodeOrTrace
-  let nodeHopsAway = hopsAway ?? nodeOrTrace.hopsAway
-  let towards = routeHopCandidate(trace?.route)
-  let back = routeBackHopCandidate(trace?.routeBack ?? trace?.back)
-  let positiveHopsAway = positiveCandidate(nodeHopsAway)
-  let candidates = [towards, back, positiveHopsAway].filter((value): value is number => value !== null)
-  let min = candidates.length ? Math.min(...candidates) : finiteCandidate(nodeHopsAway)
+  let towards = validRouteHopCount(trace.route, 'towards')
+  let back = validRouteHopCount(trace.routeBack ?? trace.back, 'back')
+  let validHops = [towards, back].filter((value): value is number => value !== null)
+  let min = validHops.length ? Math.min(...validHops) : null
 
   if (min === null) return undefined
   return { towards, back, min }

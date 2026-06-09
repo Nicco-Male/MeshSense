@@ -109,7 +109,7 @@ function checkForCachedRoute(node: NodeInfo) {
   if (trace) {
     console.log('Loading cached route', node.num, trace)
     node.trace = trace
-    node.traceHops = calculateTraceHops({ trace, hopsAway: node.hopsAway })
+    node.traceHops = calculateTraceHops(trace)
     traceRouteLog[node.num] = Date.now()
   }
 }
@@ -516,8 +516,7 @@ export async function connect(address?: string) {
     let packet: MeshPacket
     if (id) packet = packets.upsert({ id, data })
     if (e.from && data) {
-      let originalNodeRecord = nodes.value.find((node) => node.num == e.from)
-      let node = nodes.upsert({ num: e.from, trace: data, traceHops: calculateTraceHops({ trace: data, hopsAway: originalNodeRecord?.hopsAway }) })
+      let node = nodes.upsert({ num: e.from, trace: data, traceHops: calculateTraceHops(data) })
       recordNodeUpdate(node)
       if (routeCache) routeCache.assign({ [e.from]: data })
       if (packet?.viaMqtt === false) sendToMeshMap({ num: e.from, trace: data }, node, packet)
