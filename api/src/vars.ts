@@ -123,6 +123,7 @@ export type NodeInfo = {
   channel: number
   viaMqtt: boolean
   hopsAway: number
+  traceHops?: TraceHops
   isFavorite: boolean
   user: User
   position: Position
@@ -131,6 +132,12 @@ export type NodeInfo = {
   rssi?: number
   trace?: TraceRouteData
   approximatePosition?: { longitude: number; latitude: number } | false
+}
+
+export type TraceHops = {
+  towards: number | null
+  back: number | null
+  min: number | null
 }
 
 export type TraceRouteData = {
