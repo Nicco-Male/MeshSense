@@ -2011,24 +2011,85 @@
       return parsed === undefined ? undefined : parsed * 1e-7;
     }
 
-    function extractCoordinates(raw) {
+    function getNodeCoords(raw) {
+      if (!raw) return null;
       const node = raw || {};
       const rawNode = node.raw || {};
-      const latitude = firstNumericValue(node.latitude, node.lat, node.position?.latitude, rawNode.latitude, rawNode.lat, rawNode.position?.latitude)
-        ?? firstScaledCoordinate(node.position?.latitudeI, node.latitudeI, node.latitude_i, rawNode.position?.latitudeI, rawNode.latitudeI, rawNode.latitude_i);
-      const longitude = firstNumericValue(node.longitude, node.lon, node.lng, node.position?.longitude, rawNode.longitude, rawNode.lon, rawNode.lng, rawNode.position?.longitude)
-        ?? firstScaledCoordinate(node.position?.longitudeI, node.longitudeI, node.longitude_i, rawNode.position?.longitudeI, rawNode.longitudeI, rawNode.longitude_i);
-      return { latitude, longitude };
+      const latitude = firstNumericValue(
+        node.lat,
+        node.latitude,
+        node.position?.lat,
+        node.position?.latitude,
+        node.gps?.lat,
+        node.gps?.latitude,
+        rawNode.lat,
+        rawNode.latitude,
+        rawNode.position?.lat,
+        rawNode.position?.latitude,
+        rawNode.gps?.lat,
+        rawNode.gps?.latitude
+      ) ?? firstScaledCoordinate(
+        node.latitudeI,
+        node.latitude_i,
+        node.position?.latitudeI,
+        node.position?.latitude_i,
+        node.gps?.latitudeI,
+        node.gps?.latitude_i,
+        rawNode.latitudeI,
+        rawNode.latitude_i,
+        rawNode.position?.latitudeI,
+        rawNode.position?.latitude_i,
+        rawNode.gps?.latitudeI,
+        rawNode.gps?.latitude_i
+      );
+      const longitude = firstNumericValue(
+        node.lon,
+        node.lng,
+        node.longitude,
+        node.position?.lon,
+        node.position?.lng,
+        node.position?.longitude,
+        node.gps?.lon,
+        node.gps?.lng,
+        node.gps?.longitude,
+        rawNode.lon,
+        rawNode.lng,
+        rawNode.longitude,
+        rawNode.position?.lon,
+        rawNode.position?.lng,
+        rawNode.position?.longitude,
+        rawNode.gps?.lon,
+        rawNode.gps?.lng,
+        rawNode.gps?.longitude
+      ) ?? firstScaledCoordinate(
+        node.longitudeI,
+        node.longitude_i,
+        node.position?.longitudeI,
+        node.position?.longitude_i,
+        node.gps?.longitudeI,
+        node.gps?.longitude_i,
+        rawNode.longitudeI,
+        rawNode.longitude_i,
+        rawNode.position?.longitudeI,
+        rawNode.position?.longitude_i,
+        rawNode.gps?.longitudeI,
+        rawNode.gps?.longitude_i
+      );
+      const lat = Number(latitude);
+      const lon = Number(longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+      if (lat === 0 && lon === 0) return null;
+      return { lat, lon };
+    }
+
+    function extractCoordinates(raw) {
+      const coords = getNodeCoords(raw);
+      return coords ? { latitude: coords.lat, longitude: coords.lon } : { latitude: undefined, longitude: undefined };
     }
 
     function validLatLon(node) {
-      if (!node) return false;
-      const lat = Number(node.latitude);
-      const lon = Number(node.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
-      if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return false;
-      if (lat === 0 && lon === 0) return false;
-      return true;
+      return !!getNodeCoords(node);
     }
 
     function nodeKey(node) {
@@ -2137,12 +2198,112 @@
       return meshtasticIdSuffix(node);
     }
 
+    function nodeIdentityIds(node) {
+      const ids = new Set();
+      if (!node) return ids;
+      [
+        node.id,
+        node.fromId,
+        node.nodeId,
+        node.localNodeId,
+        node.ownNodeId,
+        node.selfNodeId,
+        node.num,
+        node.nodeNum,
+        node.nodeNumber,
+        node.localNodeNum,
+        node.ownNodeNum,
+        node.selfNodeNum,
+        node.raw?.id,
+        node.raw?.fromId,
+        node.raw?.nodeId,
+        node.raw?.num,
+        node.raw?.nodeNum,
+        node.raw?.nodeNumber,
+      ].forEach(value => {
+        const id = normalizeNodeId(value);
+        if (id) ids.add(id);
+      });
+      return ids;
+    }
+
+    function nodeHasLocalOwnershipFlag(node) {
+      if (!node) return false;
+      const flags = [
+        node.isLocal,
+        node.isSelf,
+        node.isLocalNode,
+        node.localNode,
+        node.ownNode,
+        node.self,
+        node._isMeshSenseLocal,
+        node.raw?.isLocal,
+        node.raw?.isSelf,
+        node.raw?.isLocalNode,
+        node.raw?.localNode,
+        node.raw?.ownNode,
+        node.raw?.self,
+      ];
+      return flags.some(value => value === true || value === "true" || value === 1 || value === "1");
+    }
+
+    function localNodeIdsForInstance(instance) {
+      const ids = new Set(getRuntime(instance.id).localNodeIds || []);
+      const status = getRuntime(instance.id).statusData || {};
+      [
+        status.myNode,
+        status.myNodeId,
+        status.localNode,
+        status.localNodeId,
+        status.nodeId,
+        status.nodeNum,
+        status.nodeNumber,
+        status.ownNode,
+        status.ownNodeId,
+        status.self,
+        status.selfNode,
+        status.radioNode,
+        status.connectedNode,
+      ].forEach(value => {
+        const direct = value && typeof value === "object" ? (value.id || value.nodeId || value.num || value.nodeNum || value.nodeNumber) : value;
+        const id = normalizeNodeId(direct);
+        if (id) ids.add(id);
+      });
+      return ids;
+    }
+
+
+    function localNodeNumsForInstance(instance) {
+      const nums = new Set();
+      for (const id of localNodeIdsForInstance(instance)) {
+        const parsed = parseInt(id.replace("!", ""), 16);
+        if (Number.isFinite(parsed)) nums.add(parsed >>> 0);
+      }
+      return nums;
+    }
+
+    function nodeMatchesLocalInstance(node, instance) {
+      if (!node || !instance) return false;
+      const localIds = localNodeIdsForInstance(instance);
+      const nodeIds = nodeIdentityIds(node);
+      for (const id of nodeIds) {
+        if (localIds.has(id)) return true;
+      }
+      if (nodeHasLocalOwnershipFlag(node)) {
+        if (!node.instanceId || node.instanceId === instance.id) return true;
+        if ((node.seenBy || []).some(item => item.id === instance.id)) return true;
+      }
+      return false;
+    }
+
     function isNodeLocalForAnyInstance(node) {
-      const id = normalizeNodeId(node.id || node.fromId || node.num);
-      if (!id) return false;
-      return (node.seenBy || []).some(item => {
+      const ids = nodeIdentityIds(node);
+      if (!ids.size && !nodeHasLocalOwnershipFlag(node)) return false;
+      if (nodeHasLocalOwnershipFlag(node)) return true;
+      const seenBy = node.seenBy && node.seenBy.length ? node.seenBy : (node.instanceId ? [{ id: node.instanceId }] : state.instances);
+      return (seenBy || []).some(item => {
         const rt = getRuntime(item.id);
-        return rt.localNodeIds && rt.localNodeIds.has(id);
+        return Array.from(ids).some(id => rt.localNodeIds && rt.localNodeIds.has(id));
       });
     }
 
@@ -2227,25 +2388,91 @@
       rebuildMergedNodes();
       const nodes = [];
       for (const node of state.mergedNodes.values()) {
-        if (validLatLon(node) && isNodeLocalForAnyInstance(node)) nodes.push(node);
+        if (getNodeCoords(node) && isNodeLocalForAnyInstance(node)) nodes.push(node);
       }
       return nodes;
     }
 
+    function preferredLocalInstances() {
+      const instances = state.instances.length ? state.instances.slice() : [];
+      return instances.sort((a, b) => {
+        const aLocale = /^(locale|local)$/i.test(a.name || "") ? 0 : 1;
+        const bLocale = /^(locale|local)$/i.test(b.name || "") ? 0 : 1;
+        return aLocale - bLocale;
+      });
+    }
+
+    function localCandidateLabel(node, source, instance, markerKey = "") {
+      const ids = Array.from(nodeIdentityIds(node));
+      return {
+        source,
+        markerKey,
+        instanceId: instance?.id || node?.instanceId || "",
+        instanceName: instance?.name || node?.instanceName || "",
+        nodeId: node?.id || ids[0] || "",
+        nodeNum: node?.nodeNum ?? node?.num ?? node?.nodeNumber ?? "",
+        ids,
+        hasCoordinates: !!getNodeCoords(node),
+        hasLocalFlag: nodeHasLocalOwnershipFlag(node),
+      };
+    }
+
+    function centerMapOnNodeCoords(coords, instance, node) {
+      state.map.setView([coords.lat, coords.lon], Math.max(state.map.getZoom(), 12));
+      log(`${instance.name}: centrato nodo locale ${node?.id || Array.from(nodeIdentityIds(node))[0] || "visibile"}`);
+      return true;
+    }
+
     function centerOnLocalNode() {
       rebuildMergedNodes();
-      const preferredInstances = state.instances.length ? state.instances : [];
-      for (const instance of preferredInstances) {
-        const rt = getRuntime(instance.id);
-        for (const id of rt.localNodeIds || []) {
-          const local = state.nodesByInstance.get(instance.id)?.get(id) || findNodeById(id, instance.id);
-          if (validLatLon(local)) {
-            state.map.setView([Number(local.latitude), Number(local.longitude)], Math.max(state.map.getZoom(), 12));
-            log(`${instance.name}: centrato nodo locale ${id}`);
-            return true;
+      const diagnostics = [];
+
+      for (const instance of preferredLocalInstances()) {
+        const localIds = localNodeIdsForInstance(instance);
+        const mergedCandidates = Array.from(state.mergedNodes.values()).filter(node => nodeMatchesLocalInstance(node, instance));
+        for (const node of mergedCandidates) {
+          diagnostics.push(localCandidateLabel(node, "merged/map nodes", instance));
+          const coords = getNodeCoords(node);
+          if (coords) return centerMapOnNodeCoords(coords, instance, node);
+        }
+
+        const instanceNodes = Array.from(state.nodesByInstance.get(instance.id)?.values() || []).filter(node => nodeMatchesLocalInstance(node, instance));
+        for (const node of instanceNodes) {
+          diagnostics.push(localCandidateLabel(node, "instance nodes", instance));
+          const coords = getNodeCoords(node);
+          if (coords) return centerMapOnNodeCoords(coords, instance, node);
+        }
+
+        for (const [key, marker] of state.markers) {
+          const markerNode = marker._meshSenseNode;
+          if (!markerNode || !nodeMatchesLocalInstance(markerNode, instance)) continue;
+          const latLng = marker.getLatLng && marker.getLatLng();
+          diagnostics.push({ ...localCandidateLabel(markerNode, "rendered marker", instance, key), markerHasLatLng: !!latLng });
+          if (latLng && Number.isFinite(latLng.lat) && Number.isFinite(latLng.lng)) {
+            return centerMapOnNodeCoords({ lat: Number(latLng.lat), lon: Number(latLng.lng) }, instance, markerNode);
           }
+          const coords = getNodeCoords(markerNode);
+          if (coords) return centerMapOnNodeCoords(coords, instance, markerNode);
+        }
+
+        for (const id of localIds) {
+          const fallback = findNodeById(id, instance.id, { requirePosition: false });
+          if (!fallback || mergedCandidates.includes(fallback) || instanceNodes.includes(fallback)) continue;
+          diagnostics.push(localCandidateLabel(fallback, "identifier fallback", instance));
+          const coords = getNodeCoords(fallback);
+          if (coords) return centerMapOnNodeCoords(coords, instance, fallback);
         }
       }
+
+      console.debug("MeshSense local node centering diagnostics", {
+        instances: preferredLocalInstances().map(instance => ({
+          instanceName: instance.name,
+          instanceId: instance.id,
+          localNodeIds: Array.from(localNodeIdsForInstance(instance)),
+          localNodeNums: Array.from(localNodeNumsForInstance(instance)),
+        })),
+        candidateNodesChecked: diagnostics,
+      });
       log("Nodo locale senza coordinate disponibili: impossibile centrare.");
       return false;
     }
@@ -2253,7 +2480,10 @@
     function centerOnMeshSenseNodes() {
       const nodes = connectedMeshSenseNodes();
       if (nodes.length) {
-        const bounds = nodes.map(node => [Number(node.latitude), Number(node.longitude)]);
+        const bounds = nodes.map(node => {
+          const coords = getNodeCoords(node);
+          return [coords.lat, coords.lon];
+        });
         fitMap(bounds, { maxZoom: 12 });
         return true;
       }
@@ -2269,7 +2499,10 @@
       const mapped = Array.from(state.mergedNodes.values()).filter(validLatLon);
       if (mapped.length) {
         state.initialCentered = true;
-        fitMap(mapped.map(node => [Number(node.latitude), Number(node.longitude)]), { maxZoom: 10 });
+        fitMap(mapped.map(node => {
+          const coords = getNodeCoords(node);
+          return [coords.lat, coords.lon];
+        }), { maxZoom: 10 });
       }
     }
 
@@ -2942,7 +3175,10 @@
             lineJoin: "round",
             className: `trace-line quality-${stat.qualityLabel}`,
           };
-          const latlngs = [[Number(fromNode.latitude), Number(fromNode.longitude)], [Number(toNode.latitude), Number(toNode.longitude)]];
+          const fromCoords = getNodeCoords(fromNode);
+          const toCoords = getNodeCoords(toNode);
+          if (!fromCoords || !toCoords) continue;
+          const latlngs = [[fromCoords.lat, fromCoords.lon], [toCoords.lat, toCoords.lon]];
           let line = state.edgeLines.get(segmentKey);
           if (!line) {
             line = L.polyline(latlngs, style).addTo(state.traceLayer);
@@ -2986,9 +3222,12 @@
             if (!validLatLon(fromNode) || !validLatLon(toNode)) continue;
 
             const segmentKey = `${mode}:${edge.key}:segment:${index}`;
+            const fromCoords = getNodeCoords(fromNode);
+            const toCoords = getNodeCoords(toNode);
+            if (!fromCoords || !toCoords) continue;
             const latlngs = [
-              [Number(fromNode.latitude), Number(fromNode.longitude)],
-              [Number(toNode.latitude), Number(toNode.longitude)],
+              [fromCoords.lat, fromCoords.lon],
+              [toCoords.lat, toCoords.lon],
             ];
             alive.add(segmentKey);
 
@@ -3278,6 +3517,8 @@
       const registry = registryDisplayNode(node.id) || {};
       const seenMap = registry.seenByInstances || {};
       const seen = (node.seenBy || Object.values(seenMap) || []).map(item => escapeHtml(item.name)).join(", ") || "—";
+      const coords = getNodeCoords(node);
+      const coordsText = coords ? `${coords.lat.toFixed(6)}, ${coords.lon.toFixed(6)}` : "—";
       return `
         <div class="popup">
           <h3>${escapeHtml(displayNodeName(node))}</h3>
@@ -3285,6 +3526,7 @@
           <div class="popup-grid">
             <div style="grid-column:1 / -1;"><span>Ultimo visto</span>${formatAge(node._lastHeardMs)}</div>
             <div style="grid-column:1 / -1;"><span>Istanze</span>${seen}</div>
+            <div style="grid-column:1 / -1;"><span>Coordinate</span><span class="mono">${escapeHtml(coordsText)}</span></div>
           </div>
         </div>
       `;
@@ -3373,7 +3615,8 @@
 
       const node = findNodeById(state.selectedNodeId, null, { requirePosition: false }) || { id: state.selectedNodeId };
       const registry = registryDisplayNode(state.selectedNodeId) || {};
-      const coords = validLatLon(node) ? `${Number(node.latitude).toFixed(6)}, ${Number(node.longitude).toFixed(6)}` : "—";
+      const nodeCoords = getNodeCoords(node);
+      const coords = nodeCoords ? `${nodeCoords.lat.toFixed(6)}, ${nodeCoords.lon.toFixed(6)}` : "—";
       const traces = traceRowsForSelectedNode();
       const sourceList = Object.entries(registry.sources || {}).map(([source, count]) => `${escapeHtml(source)} (${count})`).join(", ") || "—";
       const names = uniqueHistory(registry.nameHistory, item => `${item.longName || ""}|${item.shortName || ""}`);
@@ -3491,8 +3734,9 @@
       state.traceFilter = "all";
       if (options.focusTrace && !state.tracesVisible) state.tracesVisible = true;
       const selected = findNodeById(id, null, { requirePosition: false }) || { id };
-      if (options.centerIfCoordinates && validLatLon(selected) && state.map) {
-        state.map.setView([Number(selected.latitude), Number(selected.longitude)], Math.max(state.map.getZoom(), 12));
+      const coords = getNodeCoords(selected);
+      if (options.centerIfCoordinates && coords && state.map) {
+        state.map.setView([coords.lat, coords.lon], Math.max(state.map.getZoom(), 12));
       }
       renderEdges();
       renderMarkers();
@@ -3525,11 +3769,12 @@
       const bounds = [];
 
       for (const [key, node] of state.mergedNodes) {
-        if (!validLatLon(node)) continue;
+        const coords = getNodeCoords(node);
+        if (!coords) continue;
         existingKeys.add(key);
 
-        const lat = Number(node.latitude);
-        const lon = Number(node.longitude);
+        const lat = coords.lat;
+        const lon = coords.lon;
 
         let marker = state.markers.get(key);
         const icon = nodeMarkerIcon(node);
@@ -3547,6 +3792,8 @@
           marker.setIcon(icon);
         }
 
+        marker._meshSenseNode = node;
+        marker._meshSenseKey = key;
         marker.bindPopup(markerPopup(node));
         marker.off("click");
         marker.on("click", () => selectNode(node, { openDetails: true, focusTrace: true }));
@@ -3573,7 +3820,10 @@
       fixMapSize();
       const bounds = boundsInput || Array.from(state.mergedNodes.values())
         .filter(validLatLon)
-        .map(node => [Number(node.latitude), Number(node.longitude)]);
+        .map(node => {
+          const coords = getNodeCoords(node);
+          return [coords.lat, coords.lon];
+        });
 
       if (!bounds.length) {
         state.map.setView([20, 0], 2);
@@ -3686,8 +3936,9 @@
 
         const registry = registryDisplayNode(node.id) || {};
         const sourceBadge = registry.positionSource ? `<div class="muted">${escapeHtml(registry.positionSource)}${node._fromGlobalRegistry ? " · globale" : ""}</div>` : "";
-        const coords = validLatLon(node)
-          ? `<span class="mono">${Number(node.latitude).toFixed(6)}, ${Number(node.longitude).toFixed(6)}</span>${sourceBadge}`
+        const nodeCoords = getNodeCoords(node);
+        const coords = nodeCoords
+          ? `<span class="mono">${nodeCoords.lat.toFixed(6)}, ${nodeCoords.lon.toFixed(6)}</span>${sourceBadge}`
           : `<span class="muted">—</span>`;
 
         return `
@@ -3715,9 +3966,10 @@
         if (shortName === null) return;
         const longName = prompt("Long name", current.longName || "");
         if (longName === null) return;
-        const latText = prompt("Latitude", validLatLon(current) ? String(current.latitude) : "");
+        const currentCoords = getNodeCoords(current);
+        const latText = prompt("Latitude", currentCoords ? String(currentCoords.lat) : "");
         if (latText === null) return;
-        const lonText = prompt("Longitude", validLatLon(current) ? String(current.longitude) : "");
+        const lonText = prompt("Longitude", currentCoords ? String(currentCoords.lon) : "");
         if (lonText === null) return;
         const override = { shortName, longName };
         const latitude = numericValue(latText);
