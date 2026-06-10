@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { connectionStatus, address, enableTLS, myNodeMetadata, myNodeNum, nodes, lastFromRadio } from 'api/src/vars'
+  import { connectionStatus, connectionError, address, enableTLS, myNodeMetadata, myNodeNum, nodes, lastFromRadio } from 'api/src/vars'
   import Card from './lib/Card.svelte'
   import { smallMode } from './Nodes.svelte'
   import { hasAccess } from './lib/util'
@@ -56,6 +56,9 @@
       {:else if ['searching', 'connecting', 'configuring', 'reconnecting'].includes($connectionStatus)}
         <button type="button" class="btn w-full h-full" on:click={disconnect}>Cancel</button>
       {/if}
+    {/if}
+    {#if $connectionError}
+      <div class="col-span-full px-2 pb-2 text-xs text-red-300 break-words">{$connectionError}</div>
     {/if}
   </form>
 </Card>

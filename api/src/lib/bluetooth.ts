@@ -2,6 +2,7 @@ import { Bluetooth } from '../../webbluetooth/dist'
 import { State } from './state'
 import { BluetoothDeviceImpl } from '../../webbluetooth/dist/device'
 import { createBluetooth } from 'node-ble'
+import { runtimeFlags } from './runtimeFlags'
 
 export let bluetoothDevices: Record<string, BluetoothDeviceImpl> = {}
 let bluetoothDeviceList = new State('bluetoothDeviceList', [], { primaryKey: 'id', hideLog: true })
@@ -44,6 +45,10 @@ export async function scanForDevice() {
 }
 
 export async function beginScanning(targetId?: string) {
+  if (!runtimeFlags.enableAutoScanning) {
+    stopScanning()
+    return
+  }
   deviceTargetId = targetId
   delete bluetoothDevices[targetId]
   if (scanning) {

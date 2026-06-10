@@ -10,7 +10,7 @@ import { logRuntimeFlags } from './lib/runtimeFlags'
 import { installPublicApi } from './lib/publicApi'
 import './meshtastic'
 import { connect, disconnect, deleteNodes, requestPosition, send, traceRoute, setPosition, deviceConfig } from './meshtastic'
-import { listSerialPorts } from './lib/serial'
+import { isSerialPath, listSerialPorts } from './lib/serial'
 import { address, apiPort, currentTime, apiHostname, accessKey, autoConnectOnStartup, meshSenseNewsDate, allowRemoteMessaging } from './vars'
 import { hostname } from 'os'
 import intercept from 'intercept-stdout'
@@ -151,8 +151,8 @@ createRoutes((app) => {
 
   checkForNews()
 
-  // Scan for serial ports
-  listSerialPorts()
+  // Scan for serial ports unless a fixed serial path is already configured.
+  if (!address.value || !isSerialPath(address.value)) listSerialPorts()
 
   if ((process.env.ADDRESS || autoConnectOnStartup.value) && address.value) connect(address.value)
 })

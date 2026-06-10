@@ -6,7 +6,7 @@
 import { HttpConnection, BleConnection, Protobuf } from '../meshtastic-js/dist'
 import { fromBinary } from '@bufbuild/protobuf'
 import { NodeSerialConnection } from './lib/serialConnection'
-import { isSerialPath, listSerialPorts } from './lib/serial'
+import { isSerialPath } from './lib/serial'
 import {
   Channel,
   MeshPacket,
@@ -20,6 +20,7 @@ import {
   broadcastId,
   channels,
   connectionStatus,
+  connectionError,
   enableTLS,
   lastFromRadio,
   meshMapForwarding,
@@ -41,11 +42,18 @@ import * as geolib from 'geolib'
 import axios from 'axios'
 import { State } from './lib/state'
 import { recordMessage, recordNodeUpdate, recordPacket } from './lib/publicApi'
+import { runtimeFlags } from './lib/runtimeFlags'
 
 let routeCache: State<Record<number, TraceRouteData>>
 
 let connection: HttpConnection | BleConnection | NodeSerialConnection
 let connectionIntended = false
+let activeConnectAddress = ''
+let configuringTimeout: ReturnType<typeof setTimeout> | undefined
+let configuringRetryCount = 0
+let receivedValidDataSinceOpen = false
+let suppressDeviceDisconnectedReconnect = false
+let connectionGeneration = 0
 // address.subscribe(connect)
 
 /** Tracks when nodes were last requested a traceroute: `traceRouteLog[nodeNum]` */
@@ -106,7 +114,7 @@ function checkForCachedRoute(node: NodeInfo) {
   if (node.trace) return
   let trace = routeCache?.value[node.num]
   if (trace) {
-    console.log('Loading cached route', node.num, trace)
+    console.debug('Loading cached route', node.num, trace)
     node.trace = trace
     traceRouteLog[node.num] = Date.now()
   }
@@ -124,12 +132,20 @@ packets.subscribe(() => {
   while (packets.value?.length > limit) packets.shift()
 })
 
+function hasFixedSerialAddress() {
+  return Boolean(address.value && isSerialPath(address.value))
+}
+
 connectionStatus.subscribe((value) => {
   if (value == 'disconnected' || value == 'searching' || value == 'reconnecting') {
-    beginScanning()
+    if (runtimeFlags.enableAutoScanning && !hasFixedSerialAddress()) beginScanning()
+    else stopScanning()
   } else stopScanning()
 
-  if (value == 'connected') uploadMyNode()
+  if (value == 'connected') {
+    clearConfiguringTimeout()
+    uploadMyNode()
+  }
 })
 
 meshMapForwarding.subscribe((enabled) => {
@@ -170,6 +186,57 @@ function disableReconnect() {
   connection.connect = async (args: any) => {
     console.log('[meshtastic] Preventing Automatic Reconnect')
   }
+}
+
+function clearConfiguringTimeout() {
+  if (configuringTimeout) clearTimeout(configuringTimeout)
+  configuringTimeout = undefined
+}
+
+function markValidRadioData() {
+  receivedValidDataSinceOpen = true
+  if (connectionStatus.value == 'configuring' || connectionStatus.value == 'connecting') {
+    connectionStatus.set('connected')
+  }
+}
+
+async function forceReconnectAfterConfiguringTimeout(address: string) {
+  if (connectionStatus.value != 'configuring' || address != activeConnectAddress) return
+
+  configuringRetryCount += 1
+  let message = `[meshtastic] Device stayed configuring for ${runtimeFlags.configuringTimeoutMs}ms (${configuringRetryCount}/${runtimeFlags.configuringMaxRetries})`
+  console.warn(message)
+
+  if (configuringRetryCount > runtimeFlags.configuringMaxRetries) {
+    connectionError.set(`${message}; giving up`)
+    connectionIntended = false
+    suppressDeviceDisconnectedReconnect = true
+    await disconnect(false)
+    suppressDeviceDisconnectedReconnect = false
+    reset()
+    clearConfiguringTimeout()
+    connectionStatus.set('disconnected')
+    return
+  }
+
+  connectionError.set(`${message}; reopening connection`)
+  connectionStatus.set('reconnecting')
+  if (connection) {
+    disableReconnect()
+    suppressDeviceDisconnectedReconnect = true
+    await connection.disconnect().catch((e) => console.warn('[meshtastic] Error closing timed-out connection', String(e)))
+    clearTimeout(connection['timeout'])
+    suppressDeviceDisconnectedReconnect = false
+  }
+  connectionGeneration++
+  reset()
+  await sleep(1000)
+  if (connectionIntended) connect(address)
+}
+
+function armConfiguringTimeout(address: string) {
+  clearConfiguringTimeout()
+  configuringTimeout = setTimeout(() => forceReconnectAfterConfiguringTimeout(address), runtimeFlags.configuringTimeoutMs)
 }
 
 exitHook(() => {
@@ -224,6 +291,8 @@ function processDecodedPortnumPacket(packet: Protobuf.Mesh.MeshPacket) {
 
 /** Disconnect from any existing connection */
 export async function disconnect(setIntent = true) {
+  connectionGeneration++
+  clearConfiguringTimeout()
   connectionStatus.set('disconnected')
   if (setIntent) connectionIntended = false
   console.log('Disconnecting from device')
@@ -253,7 +322,13 @@ export function reset() {
 export async function connect(address?: string) {
   console.log('[meshtastic] Calling connect', address)
 
+  clearConfiguringTimeout()
+  receivedValidDataSinceOpen = false
+  if (activeConnectAddress != (address || '')) configuringRetryCount = 0
+  activeConnectAddress = address || ''
+  connectionError.set(undefined)
   await disconnect(false)
+  let currentConnectionGeneration = ++connectionGeneration
   connectionIntended = true
   if (!address || address == '') return
 
@@ -263,6 +338,11 @@ export async function connect(address?: string) {
     connectionStatus.set('searching')
 
     /** Scan and wait for device to appear if not present */
+    if (!runtimeFlags.enableAutoScanning) {
+      connectionError.set('Bluetooth scanning is disabled by low-resource/auto-scanning settings')
+      connectionStatus.set('disconnected')
+      return
+    }
     beginScanning(address)
     while (!bluetoothDevices[address] && connectionStatus.value == 'searching') {
       await new Promise((resolve) => setTimeout(resolve, 100))
@@ -298,15 +378,25 @@ export async function connect(address?: string) {
   connection.events.onDeviceStatus.subscribe(async (e) => {
     console.log('[meshtastic] Device Status', e)
     if (e == 6) {
-      connectionStatus.set('configuring')
+      if (receivedValidDataSinceOpen) connectionStatus.set('connected')
+      else {
+        connectionStatus.set('configuring')
+        armConfiguringTimeout(address)
+      }
     } else if (e == 3) {
+      clearConfiguringTimeout()
+      receivedValidDataSinceOpen = false
       connectionStatus.set('connecting')
     } else if (e == 7) {
+      configuringRetryCount = 0
+      receivedValidDataSinceOpen = true
+      connectionError.set(undefined)
       connectionStatus.set('connected')
       // setTime()
       // } else if (e == 4) {
       // await disconnect()
     } else if (e == 2) {
+      if (suppressDeviceDisconnectedReconnect) return
       console.log('Connection Intended', connectionIntended)
       if (connectionIntended) {
         connectionStatus.set('reconnecting')
@@ -328,6 +418,7 @@ export async function connect(address?: string) {
   /** All packets */
   connection.events.onMeshPacket.subscribe((e: Protobuf.Mesh.MeshPacket) => {
     if (e.from) {
+      markValidRadioData()
       let updates: any = {
         num: e.from,
         viaMqtt: e.viaMqtt,
@@ -374,12 +465,36 @@ export async function connect(address?: string) {
     myNodeMetadata.set(e.data as any)
   })
 
+  let pendingNodeInfoPackets: any[] = []
+  let nodeInfoBatchTimer: ReturnType<typeof setTimeout> | undefined
+
+  function processNodeInfoBatch() {
+    nodeInfoBatchTimer = undefined
+    if (currentConnectionGeneration != connectionGeneration) {
+      pendingNodeInfoPackets = []
+      return
+    }
+    let batch = pendingNodeInfoPackets.splice(0, runtimeFlags.nodeInfoBatchSize)
+    for (let rawNodeInfo of batch) {
+      let e = copy(rawNodeInfo)
+      let existingNode = nodes.value.find((n) => e.num == n.num)
+      if (existingNode?.lastHeard > e.lastHeard) e.lastHeard = existingNode.lastHeard
+      checkForCachedRoute(e as any)
+      recordNodeUpdate(nodes.upsert(e))
+    }
+    if (pendingNodeInfoPackets.length) nodeInfoBatchTimer = setTimeout(processNodeInfoBatch, runtimeFlags.nodeInfoBatchIntervalMs)
+  }
+
+  function queueNodeInfoPacket(e: any) {
+    if (currentConnectionGeneration != connectionGeneration) return
+    pendingNodeInfoPackets.push(e)
+    if (!nodeInfoBatchTimer) nodeInfoBatchTimer = setTimeout(processNodeInfoBatch, runtimeFlags.nodeInfoBatchIntervalMs)
+  }
+
   /** NODEINFO_APP */
   connection.events.onNodeInfoPacket.subscribe((e) => {
-    let existingNode = nodes.value.find((n) => e.num == n.num)
-    if (existingNode?.lastHeard > e.lastHeard) e.lastHeard = existingNode.lastHeard
-    checkForCachedRoute(e as any)
-    recordNodeUpdate(nodes.upsert(copy(e)))
+    markValidRadioData()
+    queueNodeInfoPacket(e)
   })
 
   /** Update Node User data */
@@ -504,6 +619,7 @@ export async function connect(address?: string) {
   }
 
   connection.events.onFromRadio.subscribe((e) => {
+    markValidRadioData()
     updateTimeout()
     lastFromRadio.set(copy(e))
   })
