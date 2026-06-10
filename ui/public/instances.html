@@ -729,7 +729,8 @@
     }
 
     .map-controls .btn,
-    .map-controls .focus-banner {
+    .map-controls .focus-banner,
+    .map-controls .trace-view-select {
       pointer-events: auto;
     }
 
@@ -745,6 +746,18 @@
     .trace-toggle-btn.active {
       border-color: rgba(250, 204, 21, 0.66);
       color: var(--yellow);
+    }
+
+    .trace-view-select {
+      flex: 0 0 auto;
+      min-height: 38px;
+      border: 1px solid rgba(255, 122, 26, 0.42);
+      border-radius: 12px;
+      background: rgba(7, 17, 13, 0.9);
+      color: var(--text);
+      padding: 0 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.34);
+      backdrop-filter: blur(8px);
     }
 
     .focus-banner {
@@ -1150,6 +1163,64 @@
       pointer-events: auto;
     }
 
+    .trace-popup {
+      min-width: 260px;
+      max-width: min(420px, 74vw);
+    }
+
+    .trace-popup h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .trace-popup-meta,
+    .trace-path {
+      display: grid;
+      gap: 6px;
+    }
+
+    .trace-node-link {
+      border: 0;
+      border-radius: 999px;
+      background: rgba(103, 232, 154, 0.14);
+      color: #9fffc1;
+      cursor: pointer;
+      font: inherit;
+      padding: 2px 7px;
+      margin: 2px;
+      text-decoration: none;
+    }
+
+    .trace-node-link:hover {
+      background: rgba(103, 232, 154, 0.28);
+      color: #d8ffe5;
+    }
+
+    .quality-label {
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: rgba(255,255,255,0.08);
+      text-transform: capitalize;
+      font-weight: 750;
+    }
+
+    .quality-excellent { color: #67e89a; }
+    .quality-good { color: #a3e635; }
+    .quality-fair { color: #facc15; }
+    .quality-weak { color: #fb7185; }
+    .quality-unknown { color: var(--muted); }
+
+    .metric-subgrid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .metric-subgrid .detail-box {
+      padding: 8px;
+    }
+
     @keyframes nodePulse {
       0% { transform: scale(0.78); opacity: 0.80; }
       85% { transform: scale(1.42); opacity: 0; }
@@ -1313,6 +1384,11 @@
           <div class="map-wrap">
             <div class="map-controls">
               <button class="btn trace-toggle-btn" id="btnToggleTraces" type="button">Mostra traceroute</button>
+              <select class="trace-view-select" id="traceViewMode" aria-label="Modalità vista trace">
+                <option value="recent">Trace recenti</option>
+                <option value="link-quality">Qualità link</option>
+                <option value="path-reliability">Affidabilità percorsi</option>
+              </select>
               <div class="focus-banner" id="focusBanner">
                 <span id="focusText">—</span>
                 <button class="btn" id="btnClearFocus" type="button">Esci dal focus</button>
@@ -1379,6 +1455,11 @@
       markers: new Map(),
       edges: new Map(),
       edgeLines: new Map(),
+      traceLinkStats: new Map(),
+      tracePathStats: new Map(),
+      traceStatsDirty: true,
+      canonicalNodeIdCache: new Map(),
+      connectedTraceCache: new Map(),
       map: null,
       nodeLayer: null,
       traceLayer: null,
@@ -1386,10 +1467,12 @@
       selectedNodeId: null,
       tracesVisible: false,
       traceFilter: "all",
+      traceViewMode: "recent",
       focusPeerIds: new Set(),
       visibleTraceCount: 0,
       totalFocusTraceCount: 0,
       logLines: [],
+      renderTimer: null,
     };
 
     const el = {
@@ -1414,6 +1497,7 @@
       merge: document.getElementById("toggleMerge"),
       btnToggleTraces: document.getElementById("btnToggleTraces"),
       btnCenterLocal: document.getElementById("btnCenterLocal"),
+      traceViewMode: document.getElementById("traceViewMode"),
       focusBanner: document.getElementById("focusBanner"),
       focusText: document.getElementById("focusText"),
       btnClearFocus: document.getElementById("btnClearFocus"),
@@ -1634,8 +1718,10 @@
       if (!normalized) return null;
       const id = normalized.id;
       const entry = registryNode(id);
-      const now = nowIso();
-      entry.lastSeen = now;
+      const observedMs = normalized._lastHeardMs || packetSeenMs(normalized);
+      const now = Number.isFinite(observedMs) && observedMs ? new Date(observedMs).toISOString() : nowIso();
+      if (!entry.firstSeen || Date.parse(now) < Date.parse(entry.firstSeen || now)) entry.firstSeen = now;
+      if (!entry.lastSeen || Date.parse(now) > Date.parse(entry.lastSeen || 0)) entry.lastSeen = now;
       entry.sources[sourceType] = (entry.sources[sourceType] || 0) + 1;
       entry.seenByInstances[instance.id] = currentInstanceDescriptor(instance);
       state.globalRegistry.sourceInstancesSeen[instance.id] = currentInstanceDescriptor(instance);
@@ -1882,6 +1968,15 @@
       return `__invalid__:${String(value ?? "").trim() || "empty"}`;
     }
 
+    function canonicalNodeId(value) {
+      const raw = String(value ?? "").trim();
+      if (!raw) return "";
+      if (state.canonicalNodeIdCache.has(raw)) return state.canonicalNodeIdCache.get(raw);
+      const id = normalizeNodeId(value);
+      state.canonicalNodeIdCache.set(raw, id);
+      return id;
+    }
+
     function isDrawableNodeId(value) {
       return !!normalizeNodeId(value);
     }
@@ -2052,6 +2147,8 @@
         ...meta,
       };
       state.edges.set(key, edge);
+      state.traceStatsDirty = true;
+      state.connectedTraceCache.clear();
       getRuntime(instance.id).traceKeys.add(key);
     }
 
@@ -2304,32 +2401,135 @@
 
     function edgeEndpointIds(edge) {
       return {
-        from: normalizeNodeId(edge.source || edge.from || edge.fromId || edge.ids?.[0]),
-        to: normalizeNodeId(edge.destination || edge.to || edge.toId || edge.ids?.[edge.ids.length - 1]),
+        from: canonicalNodeId(edge.source || edge.from || edge.fromId || edge.ids?.[0]),
+        to: canonicalNodeId(edge.destination || edge.to || edge.toId || edge.ids?.[edge.ids.length - 1]),
       };
     }
 
-    function edgeMatchesSelectedNode(edge, nodeId = state.selectedNodeId) {
-      const clean = normalizeNodeId(nodeId);
+    function edgeContainsNode(edge, nodeId = state.selectedNodeId) {
+      const clean = canonicalNodeId(nodeId);
       if (!clean || edge.kind !== "trace") return false;
-      const endpoints = edgeEndpointIds(edge);
-      return endpoints.from === clean || endpoints.to === clean;
+      return (edge.ids || []).some(id => canonicalNodeId(id) === clean);
+    }
+
+    function edgeMatchesSelectedNode(edge, nodeId = state.selectedNodeId) {
+      return edgeContainsNode(edge, nodeId);
     }
 
     function traceDirectionForNode(edge, nodeId = state.selectedNodeId) {
-      const clean = normalizeNodeId(nodeId);
+      const clean = canonicalNodeId(nodeId);
       const endpoints = edgeEndpointIds(edge);
       if (endpoints.from === clean) return "OUT";
       if (endpoints.to === clean) return "IN";
+      if ((edge.ids || []).some(id => canonicalNodeId(id) === clean)) return "PASSANTE";
       return "—";
     }
 
     function tracePeerId(edge, nodeId = state.selectedNodeId) {
-      const clean = normalizeNodeId(nodeId);
+      const clean = canonicalNodeId(nodeId);
       const endpoints = edgeEndpointIds(edge);
       if (endpoints.from === clean) return endpoints.to;
       if (endpoints.to === clean) return endpoints.from;
+      const ids = (edge.ids || []).map(canonicalNodeId).filter(Boolean);
+      const index = ids.indexOf(clean);
+      if (index > 0) return ids[index - 1];
+      if (index >= 0 && index < ids.length - 1) return ids[index + 1];
       return "";
+    }
+
+    function statsQualityLabel(score) {
+      if (!Number.isFinite(score)) return "unknown";
+      if (score >= 82) return "excellent";
+      if (score >= 62) return "good";
+      if (score >= 42) return "fair";
+      return "weak";
+    }
+
+    function estimateQualityScore(stats) {
+      let score = 50;
+      if (Number.isFinite(stats.avgSnr)) score += Math.max(-25, Math.min(30, stats.avgSnr * 2));
+      if (Number.isFinite(stats.avgRssi)) score += Math.max(-20, Math.min(12, (stats.avgRssi + 115) * 0.55));
+      const days = stats.lastSeen ? (Date.now() - stats.lastSeen) / 86400000 : 30;
+      score += Math.max(-22, 12 - days * 4);
+      score += Math.min(16, Math.log10(Math.max(1, stats.countObserved)) * 10);
+      if (Number.isFinite(stats.successRate)) score = (score * 0.65) + (stats.successRate * 100 * 0.35);
+      return Math.max(0, Math.min(100, Math.round(score)));
+    }
+
+    function finalizeStats(stats) {
+      if (stats._snrCount) stats.avgSnr = Number((stats._snrSum / stats._snrCount).toFixed(1));
+      if (stats._rssiCount) stats.avgRssi = Number((stats._rssiSum / stats._rssiCount).toFixed(1));
+      if (Number.isFinite(stats.successCount) && Number.isFinite(stats.failureCount) && (stats.successCount + stats.failureCount) > 0) {
+        stats.successRate = stats.successCount / (stats.successCount + stats.failureCount);
+      }
+      stats.qualityScore = estimateQualityScore(stats);
+      stats.qualityLabel = statsQualityLabel(stats.qualityScore);
+      delete stats._snrSum; delete stats._snrCount; delete stats._rssiSum; delete stats._rssiCount;
+      return stats;
+    }
+
+    function rebuildTraceStats() {
+      if (!state.traceStatsDirty) return;
+      state.traceLinkStats.clear();
+      state.tracePathStats.clear();
+
+      for (const edge of state.edges.values()) {
+        if (edge.kind !== "trace") continue;
+        const ids = (edge.ids || []).map(canonicalNodeId).filter(Boolean);
+        if (ids.length < 2) continue;
+        const pathKey = `${edge.instanceId}:${ids.join(">")}`;
+        const pathStats = state.tracePathStats.get(pathKey) || {
+          key: pathKey, ids, instanceId: edge.instanceId, instanceName: edge.instanceName,
+          countObserved: 0, firstSeen: edge.lastSeen, lastSeen: edge.lastSeen, sourceEdges: []
+        };
+        pathStats.countObserved += 1;
+        pathStats.firstSeen = Math.min(pathStats.firstSeen || edge.lastSeen, edge.lastSeen || Date.now());
+        pathStats.lastSeen = Math.max(pathStats.lastSeen || 0, edge.lastSeen || 0);
+        pathStats.sourceEdges.push(edge.key);
+        state.tracePathStats.set(pathKey, pathStats);
+
+        for (let index = 0; index < ids.length - 1; index += 1) {
+          const fromNodeId = ids[index];
+          const toNodeId = ids[index + 1];
+          const key = `${fromNodeId}>${toNodeId}`;
+          const stat = state.traceLinkStats.get(key) || {
+            key, fromNodeId, toNodeId, countObserved: 0, firstSeen: edge.lastSeen, lastSeen: edge.lastSeen,
+            minSnr: undefined, maxSnr: undefined, avgSnr: undefined, minRssi: undefined, maxRssi: undefined, avgRssi: undefined,
+            successCount: undefined, failureCount: undefined, successRate: undefined, pathNodeIds: new Set(), sourceEdges: []
+          };
+          stat.countObserved += 1;
+          stat.firstSeen = Math.min(stat.firstSeen || edge.lastSeen, edge.lastSeen || Date.now());
+          stat.lastSeen = Math.max(stat.lastSeen || 0, edge.lastSeen || 0);
+          stat.sourceEdges.push(edge.key);
+          ids.forEach(id => stat.pathNodeIds.add(id));
+          const snr = numericValue(Array.isArray(edge.snr) ? edge.snr[index] : edge.snr);
+          if (snr !== undefined) {
+            stat._snrSum = (stat._snrSum || 0) + snr;
+            stat._snrCount = (stat._snrCount || 0) + 1;
+            stat.minSnr = stat.minSnr === undefined ? snr : Math.min(stat.minSnr, snr);
+            stat.maxSnr = stat.maxSnr === undefined ? snr : Math.max(stat.maxSnr, snr);
+          }
+          const rssi = numericValue(edge.rssi);
+          if (rssi !== undefined) {
+            stat._rssiSum = (stat._rssiSum || 0) + rssi;
+            stat._rssiCount = (stat._rssiCount || 0) + 1;
+            stat.minRssi = stat.minRssi === undefined ? rssi : Math.min(stat.minRssi, rssi);
+            stat.maxRssi = stat.maxRssi === undefined ? rssi : Math.max(stat.maxRssi, rssi);
+          }
+          state.traceLinkStats.set(key, stat);
+        }
+      }
+
+      for (const [key, stat] of state.traceLinkStats) {
+        finalizeStats(stat);
+        stat.pathNodeIds = Array.from(stat.pathNodeIds);
+        state.traceLinkStats.set(key, stat);
+      }
+      for (const [key, stat] of state.tracePathStats) {
+        finalizeStats(stat);
+        state.tracePathStats.set(key, stat);
+      }
+      state.traceStatsDirty = false;
     }
 
     function sortedTraceEdges() {
@@ -2383,6 +2583,119 @@
       el.focusBanner.classList.add("active");
     }
 
+    function traceQualityForEdge(edge) {
+      rebuildTraceStats();
+      const ids = (edge.ids || []).map(canonicalNodeId).filter(Boolean);
+      if (ids.length < 2) return { qualityLabel: "unknown", qualityScore: undefined, countObserved: undefined };
+      const scores = [];
+      let countObserved = 0;
+      let lastSeen = edge.lastSeen;
+      for (let index = 0; index < ids.length - 1; index += 1) {
+        const stat = state.traceLinkStats.get(`${ids[index]}>${ids[index + 1]}`);
+        if (!stat) continue;
+        scores.push(stat.qualityScore);
+        countObserved += stat.countObserved || 0;
+        lastSeen = Math.max(lastSeen || 0, stat.lastSeen || 0);
+      }
+      const qualityScore = scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : undefined;
+      return { qualityScore, qualityLabel: statsQualityLabel(qualityScore), countObserved, lastSeen };
+    }
+
+    function linkQualityColor(label) {
+      return ({ excellent: "#67e89a", good: "#a3e635", fair: "#facc15", weak: "#fb7185", unknown: "#94a3b8" })[label] || "#94a3b8";
+    }
+
+    function traceNodeButtonHtml(edge, id) {
+      const clean = canonicalNodeId(id);
+      const node = resolveTraceNode(edge, clean) || findNodeById(clean, null, { requirePosition: false }) || { id: clean };
+      return `<button class="trace-node-link" type="button" data-node-id="${escapeHtml(clean)}">${escapeHtml(displayNodeName(node))}</button>`;
+    }
+
+    function tracePathHtml(edge) {
+      const ids = (edge.ids || []).filter(isDrawableNodeId);
+      const full = ids.map(id => traceNodeButtonHtml(edge, id)).join(" → ");
+      if (ids.length <= 8) return `<div class="trace-path">${full}</div>`;
+      const compact = [...ids.slice(0, 4), ...ids.slice(-3)];
+      return `
+        <div class="trace-path">${compact.slice(0, 4).map(id => traceNodeButtonHtml(edge, id)).join(" → ")} → <span class="muted">${ids.length - 7} nodi nascosti</span> → ${compact.slice(4).map(id => traceNodeButtonHtml(edge, id)).join(" → ")}</div>
+        <details class="advanced-details" style="margin-top:8px;"><summary>Mostra percorso completo</summary><div class="trace-path" style="margin-top:8px;">${full}</div></details>
+      `;
+    }
+
+    function tracePopupHtml(edge) {
+      const endpoints = edgeEndpointIds(edge);
+      const sourceNode = findNodeById(endpoints.from, edge.instanceId, { requirePosition: false }) || { id: endpoints.from };
+      const destNode = findNodeById(endpoints.to, edge.instanceId, { requirePosition: false }) || { id: endpoints.to };
+      const hop = Math.max(0, (edge.ids || []).filter(isDrawableNodeId).length - 1);
+      const quality = traceQualityForEdge(edge);
+      const direction = state.selectedNodeId ? traceDirectionForNode(edge) : (edge.direction || "trace");
+      return `
+        <div class="trace-popup">
+          <h3>${escapeHtml(edge.instanceName || "Istanza")} · ${escapeHtml(direction)}</h3>
+          <div class="trace-popup-meta">
+            <div><strong>${escapeHtml(displayNodeName(sourceNode))}</strong> → <strong>${escapeHtml(displayNodeName(destNode))}</strong></div>
+            <div><span class="muted">Percorso</span>${tracePathHtml(edge)}</div>
+            <div><span class="muted">Hop</span> <span class="mono">${hop || "—"}${Array.isArray(edge.snr) && edge.snr.length ? `/${edge.snr.length}` : ""}</span></div>
+            <div><span class="muted">Ultimo visto</span> ${formatAge(edge.lastSeen)}</div>
+            <div><span class="muted">Qualità</span> <span class="quality-label quality-${quality.qualityLabel}">${escapeHtml(quality.qualityLabel)}</span>${Number.isFinite(quality.qualityScore) ? ` <span class="mono">${quality.qualityScore}/100</span>` : ""}</div>
+            <div><span class="muted">Osservazioni</span> <span class="mono">${quality.countObserved || "—"}</span></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function linkStatsPopupHtml(stat) {
+      const from = findNodeById(stat.fromNodeId, null, { requirePosition: false }) || { id: stat.fromNodeId };
+      const to = findNodeById(stat.toNodeId, null, { requirePosition: false }) || { id: stat.toNodeId };
+      return `
+        <div class="trace-popup">
+          <h3>${traceNodeButtonHtml({ ids: [stat.fromNodeId, stat.toNodeId] }, stat.fromNodeId)} → ${traceNodeButtonHtml({ ids: [stat.fromNodeId, stat.toNodeId] }, stat.toNodeId)}</h3>
+          <div class="trace-popup-meta">
+            <div><span class="muted">Qualità</span> <span class="quality-label quality-${stat.qualityLabel}">${escapeHtml(stat.qualityLabel)}</span> <span class="mono">${stat.qualityScore}/100</span></div>
+            <div><span class="muted">Osservazioni</span> <span class="mono">${stat.countObserved}</span></div>
+            <div><span class="muted">Ultimo visto</span> ${formatAge(stat.lastSeen)}</div>
+            <div><span class="muted">SNR medio</span> <span class="mono">${stat.avgSnr ?? "—"}</span></div>
+            <div><span class="muted">RSSI medio</span> <span class="mono">${stat.avgRssi ?? "—"}</span></div>
+            <div><span class="muted">Success rate</span> <span class="mono">${Number.isFinite(stat.successRate) ? `${Math.round(stat.successRate * 100)}%` : "—"}</span></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function pathStatsAsEdges() {
+      rebuildTraceStats();
+      const edges = [];
+      for (const stat of state.tracePathStats.values()) {
+        const sampleKey = stat.sourceEdges[0];
+        const sample = state.edges.get(sampleKey);
+        if (!sample) continue;
+        edges.push({ ...sample, key: `path:${stat.key}`, lastSeen: stat.lastSeen, countObserved: stat.countObserved, qualityScore: stat.qualityScore, qualityLabel: stat.qualityLabel });
+      }
+      return edges.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+    }
+
+    function visibleLinkStats() {
+      rebuildTraceStats();
+      let stats = Array.from(state.traceLinkStats.values());
+      if (state.selectedNodeId) {
+        const clean = canonicalNodeId(state.selectedNodeId);
+        stats = stats.filter(stat => stat.fromNodeId === clean || stat.toNodeId === clean || (stat.pathNodeIds || []).includes(clean));
+      }
+      stats.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+      const limit = state.selectedNodeId ? NODE_TRACE_LINE_LIMIT : GLOBAL_TRACE_LINE_LIMIT;
+      return { stats: stats.slice(0, limit), total: stats.length, limit };
+    }
+
+    function attachLinePopup(line, htmlFactory) {
+      line.off("click");
+      line.on("click", (event) => {
+        L.popup({ maxWidth: 460, autoPan: true })
+          .setLatLng(event.latlng)
+          .setContent(htmlFactory())
+          .openOn(state.map);
+      });
+    }
+
     function renderEdges() {
       renderTraceToggle();
       if (!state.traceLayer) return;
@@ -2400,40 +2713,29 @@
       }
 
       rebuildMergedNodes();
-      const selection = visibleTraceEdges();
-      state.visibleTraceCount = selection.edges.length;
-      state.totalFocusTraceCount = selection.total;
-      updateFocusPeers(selection.edges);
+      const mode = state.traceViewMode || "recent";
+      const selectedEdgesForPeers = [];
 
-      for (const edge of selection.edges) {
-        const focused = !!state.selectedNodeId;
-        const style = {
-          pane: "tracePane",
-          color: focused ? "#facc15" : "#ff7a1a",
-          weight: focused ? 5 : 3,
-          opacity: focused ? 0.95 : 0.64,
-          dashArray: null,
-          lineCap: "round",
-          lineJoin: "round",
-          className: "trace-line",
-        };
-
-        const names = edge.ids.map(id => displayNodeName(resolveTraceNode(edge, id) || { id })).join(" → ");
-        for (let index = 0; index < edge.ids.length - 1; index += 1) {
-          const fromId = edge.ids[index];
-          const toId = edge.ids[index + 1];
-          if (!isDrawableNodeId(fromId) || !isDrawableNodeId(toId)) continue;
-          const fromNode = resolveTraceNode(edge, fromId);
-          const toNode = resolveTraceNode(edge, toId);
+      if (mode === "link-quality") {
+        const selection = visibleLinkStats();
+        state.visibleTraceCount = selection.stats.length;
+        state.totalFocusTraceCount = selection.total;
+        for (const stat of selection.stats) {
+          const fromNode = findNodeById(stat.fromNodeId, null, { requirePosition: false });
+          const toNode = findNodeById(stat.toNodeId, null, { requirePosition: false });
           if (!validLatLon(fromNode) || !validLatLon(toNode)) continue;
-
-          const segmentKey = `${edge.key}:segment:${index}`;
-          const latlngs = [
-            [Number(fromNode.latitude), Number(fromNode.longitude)],
-            [Number(toNode.latitude), Number(toNode.longitude)],
-          ];
+          const segmentKey = `link:${stat.key}`;
           alive.add(segmentKey);
-
+          const style = {
+            pane: "tracePane",
+            color: linkQualityColor(stat.qualityLabel),
+            weight: Math.max(3, Math.min(10, 2 + Math.log2((stat.countObserved || 1) + 1) * 1.6)),
+            opacity: 0.88,
+            lineCap: "round",
+            lineJoin: "round",
+            className: `trace-line quality-${stat.qualityLabel}`,
+          };
+          const latlngs = [[Number(fromNode.latitude), Number(fromNode.longitude)], [Number(toNode.latitude), Number(toNode.longitude)]];
           let line = state.edgeLines.get(segmentKey);
           if (!line) {
             line = L.polyline(latlngs, style).addTo(state.traceLayer);
@@ -2442,11 +2744,63 @@
             line.setLatLngs(latlngs);
             line.setStyle(style);
           }
+          line.bindTooltip(`${escapeHtml(displayNodeName(fromNode))} → ${escapeHtml(displayNodeName(toNode))} · ${stat.qualityLabel} · obs ${stat.countObserved}`, { sticky: true });
+          attachLinePopup(line, () => linkStatsPopupHtml(stat));
+        }
+      } else {
+        const selection = mode === "path-reliability"
+          ? { edges: (state.selectedNodeId ? pathStatsAsEdges().filter(edge => edgeMatchesSelectedNode(edge)) : pathStatsAsEdges()).slice(0, state.selectedNodeId ? NODE_TRACE_LINE_LIMIT : GLOBAL_TRACE_LINE_LIMIT), total: state.selectedNodeId ? pathStatsAsEdges().filter(edge => edgeMatchesSelectedNode(edge)).length : pathStatsAsEdges().length }
+          : visibleTraceEdges();
+        state.visibleTraceCount = selection.edges.length;
+        state.totalFocusTraceCount = selection.total;
+        selectedEdgesForPeers.push(...selection.edges);
 
-          line.bindTooltip(`${escapeHtml(edge.instanceName || "Istanza")} · ${escapeHtml(traceDirectionForNode(edge) || edge.direction || "trace")} · ${escapeHtml(names)}`, { sticky: true });
+        for (const edge of selection.edges) {
+          const focused = !!state.selectedNodeId;
+          const quality = traceQualityForEdge(edge);
+          const style = {
+            pane: "tracePane",
+            color: mode === "path-reliability" ? linkQualityColor(quality.qualityLabel) : (focused ? "#facc15" : "#ff7a1a"),
+            weight: mode === "path-reliability" ? Math.max(3, Math.min(10, 2 + Math.log2((edge.countObserved || quality.countObserved || 1) + 1) * 1.4)) : (focused ? 5 : 3),
+            opacity: focused ? 0.95 : 0.64,
+            dashArray: null,
+            lineCap: "round",
+            lineJoin: "round",
+            className: `trace-line quality-${quality.qualityLabel}`,
+          };
+
+          const names = edge.ids.map(id => displayNodeName(resolveTraceNode(edge, id) || { id })).join(" → ");
+          for (let index = 0; index < edge.ids.length - 1; index += 1) {
+            const fromId = edge.ids[index];
+            const toId = edge.ids[index + 1];
+            if (!isDrawableNodeId(fromId) || !isDrawableNodeId(toId)) continue;
+            const fromNode = resolveTraceNode(edge, fromId);
+            const toNode = resolveTraceNode(edge, toId);
+            if (!validLatLon(fromNode) || !validLatLon(toNode)) continue;
+
+            const segmentKey = `${mode}:${edge.key}:segment:${index}`;
+            const latlngs = [
+              [Number(fromNode.latitude), Number(fromNode.longitude)],
+              [Number(toNode.latitude), Number(toNode.longitude)],
+            ];
+            alive.add(segmentKey);
+
+            let line = state.edgeLines.get(segmentKey);
+            if (!line) {
+              line = L.polyline(latlngs, style).addTo(state.traceLayer);
+              state.edgeLines.set(segmentKey, line);
+            } else {
+              line.setLatLngs(latlngs);
+              line.setStyle(style);
+            }
+
+            line.bindTooltip(`${escapeHtml(edge.instanceName || "Istanza")} · ${escapeHtml(traceDirectionForNode(edge) || edge.direction || "trace")} · ${escapeHtml(names)}`, { sticky: true });
+            attachLinePopup(line, () => tracePopupHtml(edge));
+          }
         }
       }
 
+      updateFocusPeers(selectedEdgesForPeers.length ? selectedEdgesForPeers : sortedTraceEdges().filter(edge => edgeMatchesSelectedNode(edge)));
       for (const [key, line] of state.edgeLines) {
         if (!alive.has(key)) {
           state.traceLayer.removeLayer(line);
@@ -2488,6 +2842,51 @@
       return 0.38;
     }
 
+    const TELEMETRY_FIELDS = [
+      "batteryLevel", "voltage", "channelUtilization", "airUtilTx", "uptimeSeconds",
+      "temperature", "relativeHumidity", "barometricPressure", "gasResistance", "iaq",
+      "hardwareModel", "firmwareVersion", "role"
+    ];
+
+    function nestedValue(source, path) {
+      let current = source;
+      for (const key of path) {
+        if (current === null || current === undefined) return undefined;
+        current = current[key];
+      }
+      return current;
+    }
+
+    function firstDefinedValue(...values) {
+      for (const value of values) {
+        if (value !== undefined && value !== null && value !== "") return value;
+      }
+      return undefined;
+    }
+
+    function extractTelemetryFields(node) {
+      const raw = node?.raw || {};
+      const telemetry = node?.telemetry || node?.deviceMetrics || raw?.telemetry || raw?.deviceMetrics || raw?.data?.telemetry || {};
+      const device = node?.deviceMetrics || telemetry?.deviceMetrics || telemetry?.device || raw?.deviceMetrics || raw?.data?.deviceMetrics || {};
+      const environment = node?.environmentMetrics || telemetry?.environmentMetrics || telemetry?.environment || raw?.environmentMetrics || raw?.data?.environmentMetrics || {};
+      const user = node?.user || raw?.user || raw?.data?.user || {};
+      return {
+        batteryLevel: firstDefinedValue(node?.batteryLevel, node?.battery, device.batteryLevel, device.battery, telemetry.batteryLevel),
+        voltage: firstDefinedValue(node?.voltage, device.voltage, telemetry.voltage),
+        channelUtilization: firstDefinedValue(node?.channelUtilization, device.channelUtilization, telemetry.channelUtilization),
+        airUtilTx: firstDefinedValue(node?.airUtilTx, node?.airUtilizationTx, device.airUtilTx, device.airUtilizationTx, telemetry.airUtilTx),
+        uptimeSeconds: firstDefinedValue(node?.uptimeSeconds, node?.uptime, device.uptimeSeconds, device.uptime, telemetry.uptimeSeconds),
+        temperature: firstDefinedValue(node?.temperature, environment.temperature, telemetry.temperature),
+        relativeHumidity: firstDefinedValue(node?.relativeHumidity, node?.humidity, environment.relativeHumidity, environment.humidity, telemetry.relativeHumidity),
+        barometricPressure: firstDefinedValue(node?.barometricPressure, node?.pressure, environment.barometricPressure, environment.pressure, telemetry.barometricPressure),
+        gasResistance: firstDefinedValue(node?.gasResistance, environment.gasResistance, telemetry.gasResistance),
+        iaq: firstDefinedValue(node?.iaq, environment.iaq, telemetry.iaq),
+        hardwareModel: firstDefinedValue(node?.hardwareModel, node?.hwModel, user.hwModel, user.hardwareModel, raw?.hardwareModel),
+        firmwareVersion: firstDefinedValue(node?.firmwareVersion, node?.firmware, node?.version, raw?.firmwareVersion, raw?.firmware, raw?.version),
+        role: firstDefinedValue(node?.role, user.role, raw?.role),
+      };
+    }
+
     function normalizeNode(raw, instance) {
       const node = { ...(raw || {}), raw };
       const id = normalizeNodeId(nodeKey(node));
@@ -2503,6 +2902,8 @@
       node.instanceName = instance.name;
       node.instanceColor = instance.color;
       node._lastHeardMs = lastHeardMs(node);
+      Object.assign(node, extractTelemetryFields(node));
+      node.nodeNum = firstNumericValue(node.nodeNum, node.num, node.node_number, node.raw?.num, node.raw?.nodeNum);
       node._hasPosition = validLatLon(node);
       return node;
     }
@@ -2543,6 +2944,21 @@
         hopLimit: normalized.hopLimit ?? prev.hopLimit,
         hopStart: normalized.hopStart ?? prev.hopStart,
         hopsUsed: normalized.hopsUsed ?? prev.hopsUsed,
+        nodeNum: normalized.nodeNum ?? prev.nodeNum,
+        hardwareModel: normalized.hardwareModel ?? prev.hardwareModel,
+        firmwareVersion: normalized.firmwareVersion ?? prev.firmwareVersion,
+        batteryLevel: normalized.batteryLevel ?? prev.batteryLevel,
+        voltage: normalized.voltage ?? prev.voltage,
+        channelUtilization: normalized.channelUtilization ?? prev.channelUtilization,
+        airUtilTx: normalized.airUtilTx ?? prev.airUtilTx,
+        uptimeSeconds: normalized.uptimeSeconds ?? prev.uptimeSeconds,
+        temperature: normalized.temperature ?? prev.temperature,
+        relativeHumidity: normalized.relativeHumidity ?? prev.relativeHumidity,
+        barometricPressure: normalized.barometricPressure ?? prev.barometricPressure,
+        gasResistance: normalized.gasResistance ?? prev.gasResistance,
+        iaq: normalized.iaq ?? prev.iaq,
+        firstSeen: prev.firstSeen || normalized.firstSeen || new Date(normalized._lastHeardMs || Date.now()).toISOString(),
+        lastSeen: normalized.lastSeen || normalized.lastHeard || normalized.rxTime || prev.lastSeen,
         lastHeard: normalized.lastHeard || normalized.rxTime || prev.lastHeard,
         lastHeardSec: normalized.lastHeardSec ?? normalized.rxTimeSec ?? prev.lastHeardSec,
       };
@@ -2678,12 +3094,65 @@
       `).join("") || "—";
     }
 
+    function formatAbsoluteTime(value) {
+      const ms = typeof value === "number" ? value : Date.parse(value || "");
+      if (!Number.isFinite(ms) || !ms) return "—";
+      return new Date(ms).toLocaleString("it-IT");
+    }
+
+    function formatMetricValue(value, suffix = "") {
+      if (value === undefined || value === null || value === "") return "—";
+      if (typeof value === "number" && Number.isFinite(value)) return `${Number(value.toFixed ? value.toFixed(2) : value)}${suffix}`;
+      return `${escapeHtml(value)}${suffix}`;
+    }
+
+    function uptimeText(seconds) {
+      const sec = numericValue(seconds);
+      if (sec === undefined) return "—";
+      const d = Math.floor(sec / 86400);
+      const h = Math.floor((sec % 86400) / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      return [d ? `${d}g` : "", h ? `${h}h` : "", m ? `${m}m` : ""].filter(Boolean).join(" ") || `${Math.floor(sec)}s`;
+    }
+
+    function detailBox(label, value, mono = false) {
+      return `<div class="detail-box"><span>${escapeHtml(label)}</span><div class="${mono ? "mono" : ""}">${value === undefined || value === null || value === "" ? "—" : value}</div></div>`;
+    }
+
+    function nodePacketCount(node, registry) {
+      return Object.values(registry.sources || {}).reduce((sum, count) => sum + (Number(count) || 0), 0) || node.packetCount || node.count || 0;
+    }
+
+    function instanceSeenDetails(node) {
+      const registry = registryDisplayNode(node.id) || {};
+      const seen = node.seenBy && node.seenBy.length ? node.seenBy : Object.values(registry.seenByInstances || {});
+      if (!seen.length) return "—";
+      return seen.map(item => {
+        const local = state.nodesByInstance.get(item.id)?.get(node.id);
+        const first = local?.firstSeen || registry.firstSeen;
+        const last = local?.lastSeen || local?.lastHeard || registry.lastSeen;
+        return `<div><span class="pill"><span style="width:7px;height:7px;border-radius:999px;background:${item.color || "#72d98b"};display:inline-block;margin-right:5px;"></span>${escapeHtml(item.name || item.id || "Istanza")}</span><div class="muted">prima ${formatAbsoluteTime(first)} · ultima ${formatAbsoluteTime(last)}</div></div>`;
+      }).join("");
+    }
+
+    function connectedTracesForNode(nodeId) {
+      const clean = canonicalNodeId(nodeId);
+      if (!clean) return [];
+      const cacheKey = `${clean}:${state.edges.size}`;
+      if (state.connectedTraceCache.has(cacheKey)) return state.connectedTraceCache.get(cacheKey);
+      const traces = sortedTraceEdges().filter(edge => edgeMatchesSelectedNode(edge, clean));
+      state.connectedTraceCache.clear();
+      state.connectedTraceCache.set(cacheKey, traces);
+      return traces;
+    }
+
     function traceRowsForSelectedNode() {
       if (!state.selectedNodeId) return { all: [], filtered: [], totalFiltered: 0 };
-      const all = sortedTraceEdges().filter(edge => edgeMatchesSelectedNode(edge));
+      const all = connectedTracesForNode(state.selectedNodeId);
       let filtered = all;
       if (state.traceFilter === "out") filtered = all.filter(edge => traceDirectionForNode(edge) === "OUT");
       if (state.traceFilter === "in") filtered = all.filter(edge => traceDirectionForNode(edge) === "IN");
+      if (state.traceFilter === "pass") filtered = all.filter(edge => traceDirectionForNode(edge) === "PASSANTE");
       return { all, filtered: filtered.slice(0, NODE_TRACE_TABLE_LIMIT), totalFiltered: filtered.length };
     }
 
@@ -2709,29 +3178,66 @@
         const peer = peerId ? (findNodeById(peerId, edge.instanceId, { requirePosition: false }) || { id: peerId }) : null;
         const path = edge.ids.map(id => displayNodeName(resolveTraceNode(edge, id) || { id })).join(" → ");
         const hop = Math.max(0, (edge.ids || []).filter(isDrawableNodeId).length - 1);
+        const quality = traceQualityForEdge(edge);
         return `
           <tr>
             <td><span class="pill">${traceDirectionForNode(edge)}</span></td>
             <td><div>${escapeHtml(peer ? displayNodeName(peer) : "—")}</div><div class="muted mono">${escapeHtml(peerId || "—")}</div></td>
             <td>${formatAge(edge.lastSeen)}</td>
             <td><span class="mono">${hop || "—"}</span></td>
+            <td><span class="quality-label quality-${quality.qualityLabel}">${escapeHtml(quality.qualityLabel)}</span></td>
             <td><span class="mono">${escapeHtml(path)}</span></td>
             <td>${escapeHtml(edge.instanceName || "—")}</td>
           </tr>
         `;
-      }).join("") || `<tr><td colspan="6" class="muted">Nessuna trace collegata.</td></tr>`;
+      }).join("") || `<tr><td colspan="7" class="muted">Nessuna trace collegata.</td></tr>`;
+
+      const firstSeen = registry.firstSeen || node.firstSeen;
+      const lastSeen = registry.lastSeen || node.lastSeen || node.lastHeard;
+      const telemetryBoxes = [
+        detailBox("Batteria", formatMetricValue(node.batteryLevel, "%"), true),
+        detailBox("Voltage", formatMetricValue(node.voltage, "V"), true),
+        detailBox("Channel utilization", formatMetricValue(node.channelUtilization, "%"), true),
+        detailBox("Air utilization TX", formatMetricValue(node.airUtilTx, "%"), true),
+        detailBox("Uptime", uptimeText(node.uptimeSeconds), true),
+        detailBox("Temperatura", formatMetricValue(node.temperature, "°C"), true),
+        detailBox("Umidità", formatMetricValue(node.relativeHumidity, "%"), true),
+        detailBox("Pressione", formatMetricValue(node.barometricPressure, "hPa"), true),
+        detailBox("Gas resistance", formatMetricValue(node.gasResistance), true),
+        detailBox("IAQ", formatMetricValue(node.iaq), true),
+      ].join("");
+      const traceCount = traces.all.length;
+      const packetCount = nodePacketCount(node, registry);
 
       el.selectedNodeHint.textContent = `${traces.all.length} trace collegate`;
       el.selectedNodeBody.innerHTML = `
         <div class="node-detail-grid">
-          <div class="detail-box"><span>Nome nodo</span>${escapeHtml(displayNodeName(node))}</div>
-          <div class="detail-box"><span>NodeId</span><span class="mono">${escapeHtml(node.id || state.selectedNodeId)}</span></div>
-          <div class="detail-box"><span>Short name</span>${escapeHtml(node.shortName || "—")}</div>
-          <div class="detail-box"><span>Ultimo visto</span>${formatAge(node._lastHeardMs)}</div>
-          <div class="detail-box"><span>Istanze</span>${selectedNodeInstances(node)}</div>
-          <div class="detail-box"><span>Coordinate</span><span class="mono">${escapeHtml(coords)}</span></div>
-          <div class="detail-box"><span>RSSI / SNR ultimo</span><span class="mono">${node.rssi ?? "—"} / ${node.snr ?? "—"}</span></div>
-          <div class="detail-box"><span>Hop ultimo</span><span class="mono">${node.hopsUsed ?? "—"} / ${node.hopStart ?? node.hopLimit ?? "—"}</span></div>
+          ${detailBox("Long name", escapeHtml(node.longName || displayNodeName(node)))}
+          ${detailBox("Short name", escapeHtml(node.shortName || "—"))}
+          ${detailBox("NodeId", escapeHtml(node.id || state.selectedNodeId), true)}
+          ${detailBox("Numero nodo", formatMetricValue(node.nodeNum), true)}
+          ${detailBox("Istanze", selectedNodeInstances(node))}
+          ${detailBox("Prima volta visto", formatAbsoluteTime(firstSeen))}
+          ${detailBox("Ultima volta visto", `${formatAbsoluteTime(lastSeen)}<div class="muted">${formatAge(Date.parse(lastSeen || 0) || node._lastHeardMs)}</div>`)}
+          ${detailBox("Ultimo ascolto", `${formatAbsoluteTime(node.lastHeard || node.lastHeardSec * 1000 || node._lastHeardMs)}<div class="muted">${formatAge(node._lastHeardMs)}</div>`)}
+          ${detailBox("Coordinate", escapeHtml(coords), true)}
+          ${detailBox("RSSI / SNR ultimo", `${node.rssi ?? "—"} / ${node.snr ?? "—"}`, true)}
+          ${detailBox("Hop ultimo", `${node.hopsUsed ?? "—"} / ${node.hopStart ?? node.hopLimit ?? "—"}`, true)}
+          ${detailBox("Ruolo", escapeHtml(node.role || "—"))}
+          ${detailBox("Hardware", escapeHtml(node.hardwareModel || "—"))}
+          ${detailBox("Firmware", escapeHtml(node.firmwareVersion || "—"))}
+          ${detailBox("Pacchetti osservati", formatMetricValue(packetCount), true)}
+          ${detailBox("Trace collegate", formatMetricValue(traceCount), true)}
+        </div>
+
+        <div class="node-panel-section">
+          <h3>Telemetrie</h3>
+          <div class="node-detail-grid">${telemetryBoxes}</div>
+        </div>
+
+        <div class="node-panel-section">
+          <h3>Istanze dove il nodo è visto</h3>
+          <div class="advanced-list">${instanceSeenDetails(node)}</div>
         </div>
 
         <div class="node-panel-section">
@@ -2740,10 +3246,11 @@
             <button class="btn ${state.traceFilter === "all" ? "active" : ""}" type="button" data-filter="all">Tutti</button>
             <button class="btn ${state.traceFilter === "out" ? "active" : ""}" type="button" data-filter="out">Da questo nodo</button>
             <button class="btn ${state.traceFilter === "in" ? "active" : ""}" type="button" data-filter="in">Verso questo nodo</button>
+            <button class="btn ${state.traceFilter === "pass" ? "active" : ""}" type="button" data-filter="pass">Passanti</button>
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Direzione</th><th>Peer</th><th>Ultimo visto</th><th>Hop</th><th>Percorso</th><th>Istanza</th></tr></thead>
+              <thead><tr><th>Direzione</th><th>Peer</th><th>Ultimo visto</th><th>Hop</th><th>Qualità</th><th>Percorso</th><th>Istanza</th></tr></thead>
               <tbody>${rows}</tbody>
             </table>
           </div>
@@ -2770,14 +3277,19 @@
       });
     }
 
-    function selectNode(node) {
-      const id = normalizeNodeId(node?.id || node);
+    function selectNode(node, options = {}) {
+      const id = canonicalNodeId(node?.id || node);
       if (!id) return;
       state.selectedNodeId = id;
       state.traceFilter = "all";
+      if (options.focusTrace && !state.tracesVisible) state.tracesVisible = true;
+      const selected = findNodeById(id, null, { requirePosition: false }) || { id };
+      if (options.centerIfCoordinates && validLatLon(selected) && state.map) {
+        state.map.setView([Number(selected.latitude), Number(selected.longitude)], Math.max(state.map.getZoom(), 12));
+      }
       renderEdges();
       renderMarkers();
-      renderSelectedNodePanel();
+      if (options.openDetails !== false) renderSelectedNodePanel();
     }
 
     function clearNodeFocus() {
@@ -2830,7 +3342,7 @@
 
         marker.bindPopup(markerPopup(node));
         marker.off("click");
-        marker.on("click", () => selectNode(node));
+        marker.on("click", () => selectNode(node, { openDetails: true, focusTrace: true }));
         marker.bindTooltip(`${shortNodeLabel(node)} · ${displayNodeName(node)} · ${node.id}`, { direction: "top", sticky: true });
         bounds.push([lat, lon]);
       }
@@ -3019,8 +3531,17 @@
       renderInstances();
       renderStats();
       renderMarkers();
+      renderEdges();
       renderNodeTable();
       renderSelectedNodePanel();
+    }
+
+    function scheduleRenderAll(delayMs = 120) {
+      if (state.renderTimer) return;
+      state.renderTimer = setTimeout(() => {
+        state.renderTimer = null;
+        renderAll();
+      }, delayMs);
     }
 
     async function fetchJson(instance, path, timeoutMs = 7000) {
@@ -3178,10 +3699,10 @@
               rt.messageCount += 1;
             }
 
-            renderAll();
+            scheduleRenderAll();
           } catch (err) {
             rt.lastError = `parse WS: ${err.message}`;
-            renderAll();
+            scheduleRenderAll();
           }
         });
 
@@ -3229,6 +3750,8 @@
       for (const [key, edge] of state.edges) {
         if (edge.instanceId === instance.id) state.edges.delete(key);
       }
+      state.traceStatsDirty = true;
+      state.connectedTraceCache.clear();
       saveInstances();
       log(`${instance.name}: rimossa`);
       renderAll();
@@ -3269,6 +3792,8 @@
       state.instanceRuntime.clear();
       state.nodesByInstance.clear();
       state.edges.clear();
+      state.traceStatsDirty = true;
+      state.connectedTraceCache.clear();
       state.edgeLines.clear();
       if (state.traceLayer) state.traceLayer.clearLayers();
       saveInstances();
@@ -3338,6 +3863,24 @@
     el.merge.addEventListener("change", renderAll);
     el.btnToggleTraces.addEventListener("click", toggleTraces);
     el.btnClearFocus.addEventListener("click", clearNodeFocus);
+    if (el.traceViewMode) {
+      el.traceViewMode.addEventListener("change", () => {
+        state.traceViewMode = el.traceViewMode.value || "recent";
+        renderEdges();
+      });
+    }
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest(".trace-node-link[data-node-id]");
+      if (!button) return;
+      event.preventDefault();
+      event.stopPropagation();
+      selectNode(button.getAttribute("data-node-id"), {
+        openDetails: true,
+        focusTrace: true,
+        centerIfCoordinates: true,
+      });
+    });
 
     el.importFile.addEventListener("change", async () => {
       const file = el.importFile.files && el.importFile.files[0];
@@ -3366,6 +3909,7 @@
     setInterval(() => {
       renderStats();
       renderMarkers();
+      renderEdges();
       renderNodeTable();
       renderSelectedNodePanel();
     }, 15000);
