@@ -44,7 +44,9 @@ export const runtimeFlags = {
   traceSnapshotDefaultLimit: parsePositiveIntegerEnv('MESHSENSE_TRACE_SNAPSHOT_DEFAULT_LIMIT', 200, 10000)
 }
 
-export const isRemoteAgentMode = !runtimeFlags.enableInstancesDashboard
+// The instances dashboard flag only gates the multi-instance HTML page.
+// Keep the standard local dashboard, state websocket, and public/local APIs available when it is disabled.
+export const isRemoteAgentMode = false
 
 export function logRuntimeFlags() {
   console.log('[config] instances dashboard', runtimeFlags.enableInstancesDashboard ? 'enabled' : 'disabled')
@@ -52,5 +54,5 @@ export function logRuntimeFlags() {
   console.log('[config] trace history', runtimeFlags.enableTraceHistory ? 'enabled' : 'disabled')
   console.log('[config] trace history limit', runtimeFlags.traceHistoryLimit)
   console.log('[config] trace snapshot default limit', runtimeFlags.traceSnapshotDefaultLimit)
-  console.log('[config] mode', isRemoteAgentMode ? 'remote-agent' : 'central-dashboard')
+  console.log('[config] standard dashboard', 'enabled')
 }
