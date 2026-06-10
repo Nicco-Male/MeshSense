@@ -6,6 +6,7 @@ if (!(globalThis as any).crypto) {
 import 'dotenv/config'
 import './lib/persistence'
 import { app, createRoutes, finalize, server } from './lib/server'
+import { logRuntimeFlags } from './lib/runtimeFlags'
 import { installPublicApi } from './lib/publicApi'
 import './meshtastic'
 import { connect, disconnect, deleteNodes, requestPosition, send, traceRoute, setPosition, deviceConfig } from './meshtastic'
@@ -18,6 +19,8 @@ import { dataDirectory } from './lib/paths'
 import { join } from 'path'
 import axios from 'axios'
 setInterval(() => currentTime.set(Date.now()), 15000)
+
+logRuntimeFlags()
 
 process.on('uncaughtException', (err, origin) => {
   console.error('[system] Uncaught Exception', err)

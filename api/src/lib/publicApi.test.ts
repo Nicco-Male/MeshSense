@@ -19,6 +19,14 @@ import {
   type NormalizedPacket
 } from './publicApi'
 import { nodes, packets as packetHistory } from '../vars'
+import { parseBoolEnv, runtimeFlags } from './runtimeFlags'
+
+process.env.MESHSENSE_TEST_BOOL = 'false'
+assert.equal(parseBoolEnv('MESHSENSE_TEST_BOOL', true), false)
+process.env.MESHSENSE_TEST_BOOL = 'on'
+assert.equal(parseBoolEnv('MESHSENSE_TEST_BOOL', false), true)
+delete process.env.MESHSENSE_TEST_BOOL
+assert.equal(parseBoolEnv('MESHSENSE_TEST_BOOL', true), true)
 
 assert.equal(normalizeNodeId(0x1234abcd), '!1234abcd')
 assert.equal(normalizeNodeId(1), '!00000001')
@@ -192,6 +200,38 @@ assert.deepEqual(getTraceRouteSnapshot()[0].traceRoutes?.map((route) => route.no
   ['!1234abcd', '!00000001', '!00000002'],
   ['!00000002', '!00000001', '!1234abcd']
 ])
+packetHistory.set([] as any)
+runtimeStore.traceRoutes.clear()
+runtimeStore.packets = []
+runtimeStore.historyBootstrapped = false
+
+const previousTraceHistoryFlag = runtimeFlags.enableTraceHistory
+runtimeFlags.enableTraceHistory = false
+runtimeStore.traceRoutes.clear()
+runtimeStore.packets = []
+runtimeStore.historyBootstrapped = false
+packetHistory.set([
+  {
+    id: 102,
+    rxTime: 1004,
+    from: 0x1234abcd,
+    to: 0x00000002,
+    traceRoutes: [{ direction: 'towards', nodes: ['!1234abcd', '!00000002'], snr: [1] }]
+  } as any
+])
+ensureTraceHistoryBootstrapped(true)
+assert.deepEqual(getTraceRouteSnapshot(), [])
+assert.equal(getPacketSnapshot().length, 0)
+recordPacket({
+  id: 103,
+  rxTime: 1005,
+  from: 0x1234abcd,
+  to: 0x00000002,
+  traceRoutes: [{ direction: 'towards', nodes: ['!1234abcd', '!00000002'], snr: [1] }]
+})
+assert.equal(getPacketSnapshot().length, 1)
+assert.deepEqual(getTraceRouteSnapshot(), [])
+runtimeFlags.enableTraceHistory = previousTraceHistoryFlag
 packetHistory.set([] as any)
 runtimeStore.traceRoutes.clear()
 runtimeStore.packets = []
