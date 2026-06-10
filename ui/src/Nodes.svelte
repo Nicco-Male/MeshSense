@@ -38,6 +38,60 @@
   let nodeFilterInput: HTMLInputElement
   export let ol: OpenLayersMap = undefined
   export let filterText = writable('')
+  let pendingPositionRequests = new Set<number>()
+  let positionRequestState: Record<number, 'sent' | 'error'> = {}
+  let positionRequestTimers: Record<number, ReturnType<typeof setTimeout>> = {}
+
+  async function requestNodePosition(nodeNum: number) {
+    if (pendingPositionRequests.has(nodeNum)) return
+
+    pendingPositionRequests = new Set(pendingPositionRequests).add(nodeNum)
+    positionRequestState = { ...positionRequestState }
+
+    try {
+      await axios.post('/requestPosition', { destination: nodeNum })
+      setPositionRequestState(nodeNum, 'sent')
+    } catch (error) {
+      console.error('Unable to request node position', { nodeNum, error })
+      setPositionRequestState(nodeNum, 'error')
+    } finally {
+      pendingPositionRequests = withoutPendingPositionRequest(nodeNum)
+    }
+  }
+
+  function setPositionRequestState(nodeNum: number, state: 'sent' | 'error') {
+    if (positionRequestTimers[nodeNum]) clearTimeout(positionRequestTimers[nodeNum])
+    positionRequestState = { ...positionRequestState, [nodeNum]: state }
+    positionRequestTimers = {
+      ...positionRequestTimers,
+      [nodeNum]: setTimeout(() => {
+        let { [nodeNum]: _removedState, ...nextState } = positionRequestState
+        let { [nodeNum]: _removedTimer, ...nextTimers } = positionRequestTimers
+        positionRequestState = nextState
+        positionRequestTimers = nextTimers
+      }, 2500)
+    }
+  }
+
+  function withoutPendingPositionRequest(nodeNum: number) {
+    let nextPending = new Set(pendingPositionRequests)
+    nextPending.delete(nodeNum)
+    return nextPending
+  }
+
+  function positionRequestLabel(nodeNum: number) {
+    if (pendingPositionRequests.has(nodeNum)) return '…'
+    if (positionRequestState[nodeNum] == 'sent') return '✅'
+    if (positionRequestState[nodeNum] == 'error') return '⚠️'
+    return '📡'
+  }
+
+  function positionRequestTitle(nodeNum: number) {
+    if (pendingPositionRequests.has(nodeNum)) return 'Requesting Position'
+    if (positionRequestState[nodeNum] == 'sent') return 'Position Request Sent'
+    if (positionRequestState[nodeNum] == 'error') return 'Position Request Failed'
+    return 'Request Position'
+  }
 
 
   $: if ($selectNodeFilterInput) {
@@ -374,6 +428,12 @@
                   title="Traceroute{node.hopsAway == 0 ? ' Direct ' : ''}{node?.trace ? '\n' + formatTraceroutePaths(node.trace, $myNodeNum, node?.num).join('\n') : ''}"
                   on:click={() => axios.post('/traceRoute', { destination: node.num })}>↯</button
                 >
+                <button
+                  class="h-7 w-5 {pendingPositionRequests.has(node.num) ? 'animate-pulse opacity-70' : ''}"
+                  title={positionRequestTitle(node.num)}
+                  disabled={pendingPositionRequests.has(node.num)}
+                  on:click={() => requestNodePosition(node.num)}>{positionRequestLabel(node.num)}
+                </button>
               {:else if $hasAccess}
                 <button title="Set Position" class="rounded-md fill-cyan-400/80 text-lg -mx-0.5" on:click={() => ($setPositionMode = true)}
                   ><svg width="24px" height="24px" viewBox="0 0 512 512" data-name="Layer 1" id="Layer_1" xmlns="http://www.w3.org/2000/svg"
@@ -390,21 +450,11 @@
                 <button
                   class="h-7 w-5"
                   title="Fly To"
-                  on:click={(e) => {
-                    if (e.shiftKey || e.ctrlKey) axios.post('/requestPosition', { destination: node.num })
+                  on:click={() => {
                     let [long, lat] = getCoordinates(node)
                     ol.flyTo(long, lat)
                   }}
                   >🌐
-                </button>
-              {:else}
-                <button
-                  class="h-7 w-5"
-                  title="Request Position"
-                  on:click={(e) => {
-                    axios.post('/requestPosition', { destination: node.num })
-                  }}
-                  >📡
                 </button>
               {/if}
             </div>

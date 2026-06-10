@@ -11,7 +11,7 @@ import { installPublicApi } from './lib/publicApi'
 import './meshtastic'
 import { connect, disconnect, deleteNodes, requestPosition, send, traceRoute, setPosition, deviceConfig } from './meshtastic'
 import { isSerialPath, listSerialPorts } from './lib/serial'
-import { address, apiPort, currentTime, apiHostname, accessKey, autoConnectOnStartup, meshSenseNewsDate, allowRemoteMessaging } from './vars'
+import { address, apiPort, currentTime, apiHostname, accessKey, autoConnectOnStartup, meshSenseNewsDate, allowRemoteMessaging, connectionStatus } from './vars'
 import { hostname } from 'os'
 import intercept from 'intercept-stdout'
 import { createWriteStream } from 'fs'
@@ -42,6 +42,16 @@ intercept(
     while (consoleLog.length >= logSize) consoleLog.shift()
   }
 )
+
+function errorDetails(error: any) {
+  return {
+    name: error?.name,
+    message: error?.message ?? String(error),
+    stack: error?.stack,
+    responseStatus: error?.response?.status,
+    responseData: error?.response?.data
+  }
+}
 
 function isAuthorized(req: any) {
   let token = req.headers['authorization']?.split(' ')[1]
@@ -74,9 +84,32 @@ createRoutes((app) => {
   })
 
   app.post('/requestPosition', async (req, res) => {
-    let destination = req.body.destination
-    await requestPosition(destination)
-    return res.sendStatus(200)
+    let destination = Number(req.body.destination)
+    if (!Number.isFinite(destination) || !Number.isInteger(destination) || destination < 0 || destination > 0xffffffff) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid destination. destination must be a finite numeric Meshtastic node number.'
+      })
+    }
+
+    let status = connectionStatus.value
+    if (status != 'connected') {
+      console.warn('[express] /requestPosition rejected; not connected', { destination, connectionStatus: status })
+      return res.status(409).json({ ok: false, error: 'Meshtastic connection is not connected.', connectionStatus: status })
+    }
+
+    try {
+      let packetId = await requestPosition(destination)
+      console.log('[express] /requestPosition sent', { destination, connectionStatus: connectionStatus.value, packetId })
+      return res.json({ ok: true, destination, status: 'queued', packetId })
+    } catch (error) {
+      console.error('[express] /requestPosition failed', {
+        destination,
+        connectionStatus: connectionStatus.value,
+        error: errorDetails(error)
+      })
+      return res.status(500).json({ ok: false, error: 'Failed to request position.', connectionStatus: connectionStatus.value })
+    }
   })
 
   app.post('/deleteNodes', async (req, res) => {
