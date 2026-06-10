@@ -7,7 +7,7 @@ import { fromBinary } from '@bufbuild/protobuf'
 import { Protobuf } from '../../meshtastic-js/dist'
 import { address, channels, connectionStatus, messageHistory, nodes, packets, type Channel, type MeshPacket, type NodeInfo } from '../vars'
 import { getAllKeyValues } from './persistence'
-import { runtimeFlags } from './runtimeFlags'
+import { isRemoteAgentMode, runtimeFlags } from './runtimeFlags'
 
 export type NormalizedNode = {
   num?: number
@@ -88,6 +88,12 @@ type PacketFilters = {
   to?: number | string
   portnum?: number | string
   since?: number | string
+}
+
+type TraceSnapshotOptions = {
+  includeMetadata?: boolean
+  includeRaw?: boolean
+  limit?: number | string
 }
 
 type RuntimeStore = {
@@ -596,6 +602,27 @@ export function getCurrentNodeSnapshot(): NormalizedNode[] {
   return Array.from(merged.values()).sort((a, b) => (b.lastHeardSec ?? 0) - (a.lastHeardSec ?? 0))
 }
 
+export function publicNodeSnapshot(node: NormalizedNode): NormalizedNode {
+  return compact({
+    num: node.num,
+    id: node.id,
+    longName: node.longName,
+    shortName: node.shortName,
+    lastHeard: node.lastHeard,
+    lastHeardSec: node.lastHeardSec ?? null,
+    snr: node.snr ?? null,
+    rssi: node.rssi ?? null,
+    latitude: node.latitude,
+    longitude: node.longitude,
+    role: node.role,
+    source: node.source
+  })
+}
+
+export function getPublicNodeSnapshot(): NormalizedNode[] {
+  return getCurrentNodeSnapshot().map(publicNodeSnapshot)
+}
+
 
 
 const maxPacketCacheSize = normalizeLimit(process.env.MESHSENSE_PUBLIC_API_PACKET_CACHE, 1000, 10000)
@@ -785,15 +812,39 @@ function nodeMetadataForRoutes(packet: NormalizedPacket) {
   return Object.keys(metadata).length ? metadata : undefined
 }
 
-function enrichTracePacket(packet: NormalizedPacket): NormalizedPacket {
-  return compact({ ...packet, nodeMetadata: packet.nodeMetadata ?? nodeMetadataForRoutes(packet) })
+function publicPacketSnapshot(packet: NormalizedPacket, options: TraceSnapshotOptions = {}): NormalizedPacket {
+  return compact({
+    id: packet.id,
+    rxTime: packet.rxTime,
+    rxTimeSec: packet.rxTimeSec ?? null,
+    from: packet.from,
+    fromId: packet.fromId,
+    to: packet.to,
+    toId: packet.toId,
+    channel: packet.channel,
+    portnum: packet.portnum,
+    app: packet.app,
+    type: packet.type,
+    rssi: packet.rssi ?? null,
+    snr: packet.snr ?? null,
+    hasRadioMetrics: packet.hasRadioMetrics,
+    hopLimit: packet.hopLimit,
+    hopStart: packet.hopStart,
+    hopsUsed: packet.hopsUsed,
+    routeDiscovery: packet.routeDiscovery,
+    traceRoutes: packet.traceRoutes,
+    traceRoute: packet.traceRoute,
+    nodeMetadata: options.includeMetadata ? (packet.nodeMetadata ?? nodeMetadataForRoutes(packet)) : undefined,
+    raw: options.includeRaw ? packet.raw : undefined
+  })
 }
 
-export function getTraceRouteSnapshot(): NormalizedPacket[] {
+export function getTraceRouteSnapshot(options: TraceSnapshotOptions = {}): NormalizedPacket[] {
   if (!runtimeFlags.enableTraceHistory) return []
   ensureTraceHistoryBootstrapped()
   for (let node of getCurrentNodeSnapshot()) rememberNodeTrace(node)
-  return Array.from(runtimeStore.traceRoutes.values()).map(enrichTracePacket)
+  let limit = normalizeLimit(options.limit, runtimeFlags.traceSnapshotDefaultLimit, runtimeFlags.traceHistoryLimit)
+  return Array.from(runtimeStore.traceRoutes.values()).slice(-limit).map((packet) => publicPacketSnapshot(packet, options))
 }
 
 export function recordPacket(packet: MeshPacket | any) {
@@ -828,7 +879,8 @@ export function recordNodeUpdate(node: Partial<NodeInfo> | any) {
     let storedNode = runtimeStore.nodes.get(storeKey)
     if (storedNode) rememberNodeTrace(storedNode)
     if (!wasKnown) console.log('[api] node discovered', normalized.id ?? normalized.num)
-    publicApiEvents.emit('node_update', runtimeStore.nodes.get(storeKey))
+    let storedPublicNode = storedNode ? publicNodeSnapshot(storedNode) : undefined
+    if (storedPublicNode) publicApiEvents.emit('node_update', storedPublicNode)
     return normalized
   } catch (e) {
     console.log('[api] normalization error node', String(e))
@@ -871,41 +923,63 @@ export function installPublicApi(app: Express, server: Server) {
     res.json({ ok: true, service: 'meshsense-api', time: new Date().toISOString() })
   })
 
-  app.get('/api/status', (_req, res) => {
-    res.json(
-      compact({
-        connected: connectionStatus.value == 'connected',
-        connectionType: getConnectionType(),
-        device: address.value || undefined,
-        host: address.value || undefined,
-        startedAt: runtimeStore.startedAt,
-        lastPacketAt: runtimeStore.lastPacketAt,
-        packetsSeen: runtimeStore.packetsSeen,
-        nodesSeen: runtimeStore.nodesSeen
-      })
-    )
-  })
+  if (!isRemoteAgentMode) {
+    app.get('/api/status', (_req, res) => {
+      res.json(
+        compact({
+          connected: connectionStatus.value == 'connected',
+          connectionType: getConnectionType(),
+          device: address.value || undefined,
+          host: address.value || undefined,
+          startedAt: runtimeStore.startedAt,
+          lastPacketAt: runtimeStore.lastPacketAt,
+          packetsSeen: runtimeStore.packetsSeen,
+          nodesSeen: runtimeStore.nodesSeen
+        })
+      )
+    })
+  }
 
   app.get('/api/nodes', (_req, res) => {
-    res.json(getCurrentNodeSnapshot())
+    res.json(getPublicNodeSnapshot())
   })
 
-  app.get('/api/packets', (req, res) => {
-    res.json(filterPackets(getPacketSnapshot(), req.query as PacketFilters))
-  })
+  if (!isRemoteAgentMode) {
+    app.get('/api/packets', (req, res) => {
+      res.json(
+        filterPackets(getPacketSnapshot(), req.query as PacketFilters).map((packet) =>
+          publicPacketSnapshot(packet, {
+            includeRaw: String(req.query.includeRaw ?? '').toLowerCase() == 'true'
+          })
+        )
+      )
+    })
+  }
 
-  app.get('/api/traces', (_req, res) => {
-    if (!runtimeFlags.enableTraceHistory) return res.json([])
-    res.json(getTraceRouteSnapshot())
-  })
+  if (!isRemoteAgentMode) {
+    app.get('/api/traces', (req, res) => {
+      if (!runtimeFlags.enableTraceHistory) return res.json([])
+      res.json(
+        getTraceRouteSnapshot({
+          includeMetadata: String(req.query.includeMetadata ?? '').toLowerCase() == 'true',
+          includeRaw: String(req.query.includeRaw ?? '').toLowerCase() == 'true',
+          limit: req.query.limit as string | undefined
+        })
+      )
+    })
+  }
 
-  app.get('/api/messages', (req, res) => {
-    res.json(filterMessages(runtimeStore.messages, req.query as PacketFilters))
-  })
+  if (!isRemoteAgentMode) {
+    app.get('/api/messages', (req, res) => {
+      res.json(filterMessages(runtimeStore.messages, req.query as PacketFilters))
+    })
+  }
 
-  app.get('/api/channels', (_req, res) => {
-    res.json((channels.value || []).map(normalizeChannel))
-  })
+  if (!isRemoteAgentMode) {
+    app.get('/api/channels', (_req, res) => {
+      res.json((channels.value || []).map(normalizeChannel))
+    })
+  }
 
   let liveWss = new WebSocketServer({ noServer: true })
 
@@ -922,10 +996,12 @@ export function installPublicApi(app: Express, server: Server) {
     let remoteAddress = request.socket.remoteAddress
     console.log('[api] WebSocket client connected', remoteAddress)
     socket.send(JSON.stringify({ type: 'hello', ok: true, server: 'meshsense', time: new Date().toISOString() }))
-    for (let node of getCurrentNodeSnapshot()) {
+    for (let node of getPublicNodeSnapshot()) {
       socket.send(JSON.stringify({ type: 'node_update', data: node }))
     }
-    if (runtimeFlags.enableTraceHistory) socket.send(JSON.stringify({ type: 'trace_snapshot', data: getTraceRouteSnapshot() }))
+    if (!isRemoteAgentMode && runtimeFlags.enableTraceHistory && parse(request.url || '', true).query.traces == '1') {
+      socket.send(JSON.stringify({ type: 'trace_snapshot', data: getTraceRouteSnapshot() }))
+    }
 
     socket.on('close', () => console.log('[api] WebSocket client disconnected', remoteAddress))
     socket.on('error', (error) => console.log('[api] WebSocket error', remoteAddress, String(error)))
@@ -943,7 +1019,20 @@ export function installPublicApi(app: Express, server: Server) {
     })
   }
 
-  publicApiEvents.on('packet_rx', (packet) => broadcast('packet_rx', packet))
+  publicApiEvents.on('packet_rx', (packet) => {
+    if (!isRemoteAgentMode) broadcast('packet_rx', publicPacketSnapshot(packet))
+  })
   publicApiEvents.on('node_update', (node) => broadcast('node_update', node))
-  publicApiEvents.on('message_rx', (message) => broadcast('message_rx', message))
+  publicApiEvents.on('message_rx', (message) => {
+    if (!isRemoteAgentMode) {
+      broadcast(
+        'message_rx',
+        compact({
+          ...message,
+          raw: undefined,
+          packet: message.packet ? publicPacketSnapshot(message.packet) : undefined
+        })
+      )
+    }
+  })
 }

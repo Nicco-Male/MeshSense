@@ -40,12 +40,17 @@ export const runtimeFlags = {
   enableInstancesDashboard: parseBoolEnv('MESHSENSE_ENABLE_INSTANCES_DASHBOARD', true),
   enablePublicApi: parseBoolEnv('MESHSENSE_ENABLE_PUBLIC_API', true),
   enableTraceHistory: parseBoolEnv('MESHSENSE_ENABLE_TRACE_HISTORY', true),
-  traceHistoryLimit: parsePositiveIntegerEnv('MESHSENSE_TRACE_HISTORY_LIMIT', 1000, 10000)
+  traceHistoryLimit: parsePositiveIntegerEnv('MESHSENSE_TRACE_HISTORY_LIMIT', 1000, 10000),
+  traceSnapshotDefaultLimit: parsePositiveIntegerEnv('MESHSENSE_TRACE_SNAPSHOT_DEFAULT_LIMIT', 200, 10000)
 }
+
+export const isRemoteAgentMode = !runtimeFlags.enableInstancesDashboard
 
 export function logRuntimeFlags() {
   console.log('[config] instances dashboard', runtimeFlags.enableInstancesDashboard ? 'enabled' : 'disabled')
   console.log('[config] public API', runtimeFlags.enablePublicApi ? 'enabled' : 'disabled')
   console.log('[config] trace history', runtimeFlags.enableTraceHistory ? 'enabled' : 'disabled')
   console.log('[config] trace history limit', runtimeFlags.traceHistoryLimit)
+  console.log('[config] trace snapshot default limit', runtimeFlags.traceSnapshotDefaultLimit)
+  console.log('[config] mode', isRemoteAgentMode ? 'remote-agent' : 'central-dashboard')
 }
