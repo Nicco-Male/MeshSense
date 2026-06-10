@@ -625,7 +625,7 @@ export function getPublicNodeSnapshot(): NormalizedNode[] {
 
 
 
-const maxPacketCacheSize = normalizeLimit(process.env.MESHSENSE_PUBLIC_API_PACKET_CACHE, 1000, 10000)
+const maxPacketCacheSize = runtimeFlags.packetCacheLimit
 const maxTraceCacheSize = runtimeFlags.traceHistoryLimit
 
 function packetCacheKey(packet: NormalizedPacket): string {
@@ -854,7 +854,7 @@ export function recordPacket(packet: MeshPacket | any) {
     runtimeStore.packetsSeen += 1
     rememberTraceRoute(normalized)
     runtimeStore.lastPacketAt = new Date().toISOString()
-    console.log('[api] packet_rx', normalized.id ?? '(no id)', normalized.from ? `from ${normalized.from}` : '')
+    console.debug('[api] packet_rx', normalized.id ?? '(no id)', normalized.from ? `from ${normalized.from}` : '')
     publicApiEvents.emit('packet_rx', normalized)
     return normalized
   } catch (e) {
@@ -875,6 +875,11 @@ export function recordNodeUpdate(node: Partial<NodeInfo> | any) {
     let storeKey = existingEntry?.[0] ?? key
     let wasKnown = existingEntry !== undefined
     runtimeStore.nodes.set(storeKey, mergeNormalizedNode(existingEntry?.[1], normalized))
+    while (runtimeStore.nodes.size > runtimeFlags.nodeHistoryLimit) {
+      let oldestKey = runtimeStore.nodes.keys().next().value
+      if (oldestKey === undefined) break
+      runtimeStore.nodes.delete(oldestKey)
+    }
     runtimeStore.nodesSeen = runtimeStore.nodes.size
     let storedNode = runtimeStore.nodes.get(storeKey)
     if (storedNode) rememberNodeTrace(storedNode)
