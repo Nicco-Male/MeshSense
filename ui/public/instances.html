@@ -499,6 +499,37 @@
       padding: 16px;
     }
 
+    .panel.collapsed-form {
+      display: block;
+    }
+
+    .panel.collapsed-form summary.panel-head {
+      cursor: pointer;
+      list-style: none;
+      border-bottom: 0;
+    }
+
+    .panel.collapsed-form summary.panel-head::-webkit-details-marker {
+      display: none;
+    }
+
+    .panel.collapsed-form summary.panel-head::after {
+      content: "Apri";
+      color: var(--muted);
+      font-size: 12px;
+      border: 1px solid rgba(115, 255, 171, 0.16);
+      border-radius: 999px;
+      padding: 4px 8px;
+    }
+
+    .panel.collapsed-form[open] summary.panel-head {
+      border-bottom: 1px solid rgba(115, 255, 171, 0.10);
+    }
+
+    .panel.collapsed-form[open] summary.panel-head::after {
+      content: "Chiudi";
+    }
+
     .stats {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -683,6 +714,102 @@
       position: relative;
       overflow: hidden;
       isolation: isolate;
+    }
+
+    .focus-banner {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      top: 14px;
+      z-index: 900;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid rgba(250, 204, 21, 0.42);
+      border-radius: 14px;
+      background: rgba(7, 17, 13, 0.88);
+      color: var(--text);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.34);
+      backdrop-filter: blur(8px);
+    }
+
+    .focus-banner.active {
+      display: flex;
+    }
+
+    .focus-banner strong {
+      color: var(--yellow);
+    }
+
+    .node-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .detail-box {
+      border: 1px solid rgba(115, 255, 171, 0.12);
+      border-radius: 12px;
+      background: rgba(4, 13, 9, 0.36);
+      padding: 10px;
+      min-width: 0;
+    }
+
+    .detail-box span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+
+    .node-panel-section {
+      margin-top: 16px;
+    }
+
+    .node-panel-section h3 {
+      margin: 0 0 10px;
+      font-size: 14px;
+    }
+
+    .filter-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .filter-tabs .btn.active {
+      border-color: rgba(103, 232, 154, 0.7);
+      color: #03130a;
+      background: var(--green);
+      font-weight: 750;
+    }
+
+    details.advanced-details {
+      border: 1px solid rgba(115, 255, 171, 0.12);
+      border-radius: 12px;
+      background: rgba(4, 13, 9, 0.30);
+      padding: 10px 12px;
+    }
+
+    details.advanced-details summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-weight: 750;
+    }
+
+    .advanced-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .advanced-list .muted {
+      word-break: break-word;
     }
 
     #map {
@@ -970,6 +1097,26 @@
       display: flex;
     }
 
+    .node-pin.selected {
+      transform: translate(-23px, -23px) scale(1.12);
+      border-color: #facc15;
+      box-shadow:
+        0 2px 0 rgba(255,255,255,0.44) inset,
+        0 0 0 3px #facc15,
+        0 0 0 7px rgba(250, 204, 21, 0.26),
+        0 12px 26px rgba(0,0,0,0.50),
+        0 0 38px rgba(250, 204, 21, 0.50);
+      z-index: 960 !important;
+    }
+
+    .node-pin.trace-peer {
+      box-shadow:
+        0 2px 0 rgba(255,255,255,0.34) inset,
+        0 0 0 2px rgba(96, 165, 250, 0.96),
+        0 10px 24px rgba(0,0,0,0.40),
+        0 0 28px rgba(96, 165, 250, 0.46);
+    }
+
     .trace-line {
       filter: drop-shadow(0 2px 4px rgba(0,0,0,0.58));
       pointer-events: auto;
@@ -1063,10 +1210,10 @@
 
     <main class="layout">
       <aside class="grid">
-        <section class="panel">
-          <div class="panel-head">
+        <details class="panel collapsed-form" id="addInstancePanel">
+          <summary class="panel-head">
             <h2 class="panel-title">Aggiungi istanza</h2>
-          </div>
+          </summary>
           <div class="panel-body">
             <form class="form" id="instanceForm">
               <div class="field">
@@ -1085,7 +1232,7 @@
               <button class="btn primary" type="submit">Aggiungi / salva</button>
             </form>
           </div>
-        </section>
+        </details>
 
         <section class="panel">
           <div class="panel-head">
@@ -1124,14 +1271,28 @@
                 Unisci stesso nodo
               </label>
               <label class="toggle">
-                <input type="checkbox" id="toggleLines" checked />
+                <input type="checkbox" id="toggleLines" />
                 Linee traceroute
               </label>
-              <button class="btn" id="btnCenterLocal" type="button">Centra MeshSense</button>
+              <button class="btn" id="btnCenterLocal" type="button">Centra nodo locale</button>
             </div>
           </div>
           <div class="map-wrap">
+            <div class="focus-banner" id="focusBanner">
+              <span id="focusText">—</span>
+              <button class="btn" id="btnClearFocus" type="button">Mostra tutti</button>
+            </div>
             <div id="map"></div>
+          </div>
+        </section>
+
+        <section class="panel" id="selectedNodePanel">
+          <div class="panel-head">
+            <h2 class="panel-title">Nodo selezionato</h2>
+            <div class="hint" id="selectedNodeHint">Clicca un nodo sulla mappa</div>
+          </div>
+          <div class="panel-body" id="selectedNodeBody">
+            <div class="muted">Nessun nodo selezionato.</div>
           </div>
         </section>
 
@@ -1167,6 +1328,9 @@
     const GLOBAL_REGISTRY_KEY = "meshsense.instances.globalNodeRegistry.v1";
     const GLOBAL_REGISTRY_VERSION = 1;
     const MAX_LOG_LINES = 180;
+    const GLOBAL_TRACE_LINE_LIMIT = 500;
+    const NODE_TRACE_LINE_LIMIT = 200;
+    const NODE_TRACE_TABLE_LIMIT = 100;
     const COLORS = ["#67e89a", "#60a5fa", "#facc15", "#f472b6", "#c084fc", "#fb923c", "#22d3ee", "#a3e635"];
 
     const state = {
@@ -1183,6 +1347,11 @@
       nodeLayer: null,
       traceLayer: null,
       initialCentered: false,
+      selectedNodeId: null,
+      traceFilter: "all",
+      focusPeerIds: new Set(),
+      visibleTraceCount: 0,
+      totalFocusTraceCount: 0,
       logLines: [],
     };
 
@@ -1208,6 +1377,12 @@
       merge: document.getElementById("toggleMerge"),
       lines: document.getElementById("toggleLines"),
       btnCenterLocal: document.getElementById("btnCenterLocal"),
+      focusBanner: document.getElementById("focusBanner"),
+      focusText: document.getElementById("focusText"),
+      btnClearFocus: document.getElementById("btnClearFocus"),
+      selectedNodePanel: document.getElementById("selectedNodePanel"),
+      selectedNodeHint: document.getElementById("selectedNodeHint"),
+      selectedNodeBody: document.getElementById("selectedNodeBody"),
     };
 
     function nowIso() {
@@ -1743,11 +1918,14 @@
     }
 
     function nodeMarkerHtml(node) {
+      const id = normalizeNodeId(node.id);
       const local = isNodeLocalForAnyInstance(node);
       const stale = (Date.now() - (node._lastHeardMs || 0)) > 6 * 60 * 60 * 1000;
       const multi = node.seenBy && node.seenBy.length > 1;
+      const selected = state.selectedNodeId && id === state.selectedNodeId;
+      const peer = state.focusPeerIds && state.focusPeerIds.has(id);
       const color = colorForNode(node);
-      const cls = ["node-pin", local ? "meshsense-local" : "", stale ? "stale" : "", multi ? "multi" : ""].filter(Boolean).join(" ");
+      const cls = ["node-pin", local ? "meshsense-local" : "", stale ? "stale" : "", multi ? "multi" : "", selected ? "selected" : "", peer ? "trace-peer" : ""].filter(Boolean).join(" ");
       const kind = local ? "MS" : "";
       return `<div class="${cls}" data-kind="${kind}" style="--node-color:${color}"><span class="node-label">${escapeHtml(shortNodeLabel(node))}</span></div>`;
     }
@@ -1771,6 +1949,24 @@
         if (validLatLon(node) && isNodeLocalForAnyInstance(node)) nodes.push(node);
       }
       return nodes;
+    }
+
+    function centerOnLocalNode() {
+      rebuildMergedNodes();
+      const preferredInstances = state.instances.length ? state.instances : [];
+      for (const instance of preferredInstances) {
+        const rt = getRuntime(instance.id);
+        for (const id of rt.localNodeIds || []) {
+          const local = state.nodesByInstance.get(instance.id)?.get(id) || findNodeById(id, instance.id);
+          if (validLatLon(local)) {
+            state.map.setView([Number(local.latitude), Number(local.longitude)], Math.max(state.map.getZoom(), 12));
+            log(`${instance.name}: centrato nodo locale ${id}`);
+            return true;
+          }
+        }
+      }
+      log("Nodo locale senza coordinate disponibili: impossibile centrare.");
+      return false;
     }
 
     function centerOnMeshSenseNodes() {
@@ -1947,6 +2143,8 @@
           addEdge("trace", instance, route.nodes, {
             packetId: packet.id,
             direction: route.direction,
+            source: normalizeNodeId(packet.fromId || packet.from) || route.nodes[0],
+            destination: normalizeNodeId(packet.toId || packet.to) || route.nodes[route.nodes.length - 1],
             snr: route.snr,
             lastSeen: packetSeenMs(packet),
             nodeMetadata: packet.nodeMetadata || null,
@@ -1966,6 +2164,8 @@
         addEdge("trace", instance, route.nodes, {
           packetId: packet.id,
           direction: route.direction,
+          source: normalizeNodeId(packet.fromId || packet.from) || route.nodes[0],
+          destination: normalizeNodeId(packet.toId || packet.to) || route.nodes[route.nodes.length - 1],
           snr: route.snr,
           lastSeen: packetSeenMs(packet),
         });
@@ -2065,27 +2265,108 @@
       return local || globalNode || metadataNode || merged || null;
     }
 
+    function edgeEndpointIds(edge) {
+      return {
+        from: normalizeNodeId(edge.source || edge.from || edge.fromId || edge.ids?.[0]),
+        to: normalizeNodeId(edge.destination || edge.to || edge.toId || edge.ids?.[edge.ids.length - 1]),
+      };
+    }
+
+    function edgeMatchesSelectedNode(edge, nodeId = state.selectedNodeId) {
+      const clean = normalizeNodeId(nodeId);
+      if (!clean || edge.kind !== "trace") return false;
+      const endpoints = edgeEndpointIds(edge);
+      return endpoints.from === clean || endpoints.to === clean;
+    }
+
+    function traceDirectionForNode(edge, nodeId = state.selectedNodeId) {
+      const clean = normalizeNodeId(nodeId);
+      const endpoints = edgeEndpointIds(edge);
+      if (endpoints.from === clean) return "OUT";
+      if (endpoints.to === clean) return "IN";
+      return "—";
+    }
+
+    function tracePeerId(edge, nodeId = state.selectedNodeId) {
+      const clean = normalizeNodeId(nodeId);
+      const endpoints = edgeEndpointIds(edge);
+      if (endpoints.from === clean) return endpoints.to;
+      if (endpoints.to === clean) return endpoints.from;
+      return "";
+    }
+
+    function sortedTraceEdges() {
+      return Array.from(state.edges.values())
+        .filter(edge => edge.kind === "trace")
+        .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+    }
+
+    function visibleTraceEdges() {
+      const all = sortedTraceEdges();
+      if (state.selectedNodeId) {
+        const connected = all.filter(edge => edgeMatchesSelectedNode(edge));
+        return {
+          edges: connected.slice(0, NODE_TRACE_LINE_LIMIT),
+          total: connected.length,
+          limit: NODE_TRACE_LINE_LIMIT,
+        };
+      }
+      return {
+        edges: all.slice(0, GLOBAL_TRACE_LINE_LIMIT),
+        total: all.length,
+        limit: GLOBAL_TRACE_LINE_LIMIT,
+      };
+    }
+
+    function updateFocusPeers(edges) {
+      state.focusPeerIds = new Set();
+      if (!state.selectedNodeId) return;
+      for (const edge of edges) {
+        const peer = tracePeerId(edge, state.selectedNodeId);
+        if (peer) state.focusPeerIds.add(peer);
+      }
+    }
+
+    function renderFocusBanner() {
+      if (!el.focusBanner || !el.focusText) return;
+      if (!state.selectedNodeId) {
+        el.focusBanner.classList.remove("active");
+        el.focusText.textContent = "—";
+        return;
+      }
+      const node = findNodeById(state.selectedNodeId, null, { requirePosition: false }) || { id: state.selectedNodeId };
+      el.focusText.innerHTML = `<strong>Focus:</strong> ${escapeHtml(displayNodeName(node))} - trace mostrate ${state.visibleTraceCount}/${state.totalFocusTraceCount}`;
+      el.focusBanner.classList.add("active");
+    }
+
     function renderEdges() {
       if (!state.traceLayer) return;
-      const enabled = !el.lines || el.lines.checked;
+      const enabled = !!(el.lines && el.lines.checked);
       const alive = new Set();
 
       if (!enabled) {
         state.traceLayer.clearLayers();
         state.edgeLines.clear();
+        state.visibleTraceCount = 0;
+        state.totalFocusTraceCount = state.selectedNodeId ? sortedTraceEdges().filter(edge => edgeMatchesSelectedNode(edge)).length : sortedTraceEdges().length;
+        updateFocusPeers([]);
+        renderFocusBanner();
         return;
       }
 
       rebuildMergedNodes();
+      const selection = visibleTraceEdges();
+      state.visibleTraceCount = selection.edges.length;
+      state.totalFocusTraceCount = selection.total;
+      updateFocusPeers(selection.edges);
 
-      for (const [key, edge] of state.edges) {
-        if (edge.kind !== "trace") continue;
-
+      for (const edge of selection.edges) {
+        const focused = !!state.selectedNodeId;
         const style = {
           pane: "tracePane",
-          color: "#ff7a1a",
-          weight: 4,
-          opacity: 0.92,
+          color: focused ? "#facc15" : "#ff7a1a",
+          weight: focused ? 5 : 3,
+          opacity: focused ? 0.95 : 0.64,
           dashArray: null,
           lineCap: "round",
           lineJoin: "round",
@@ -2101,7 +2382,7 @@
           const toNode = resolveTraceNode(edge, toId);
           if (!validLatLon(fromNode) || !validLatLon(toNode)) continue;
 
-          const segmentKey = `${key}:segment:${index}`;
+          const segmentKey = `${edge.key}:segment:${index}`;
           const latlngs = [
             [Number(fromNode.latitude), Number(fromNode.longitude)],
             [Number(toNode.latitude), Number(toNode.longitude)],
@@ -2117,14 +2398,7 @@
             line.setStyle(style);
           }
 
-          line.bindPopup(`
-            <div class="popup">
-              <h3>Traceroute</h3>
-              <div class="muted">${escapeHtml(edge.instanceName || "Istanza")} · ${escapeHtml(edge.direction || "towards")}</div>
-              <div style="margin-top:8px;" class="mono">${escapeHtml(names)}</div>
-              <div style="margin-top:8px;" class="muted">${formatAge(edge.lastSeen)}</div>
-            </div>
-          `);
+          line.bindTooltip(`${escapeHtml(edge.instanceName || "Istanza")} · ${escapeHtml(traceDirectionForNode(edge) || edge.direction || "trace")} · ${escapeHtml(names)}`, { sticky: true });
         }
       }
 
@@ -2134,6 +2408,8 @@
           state.edgeLines.delete(key);
         }
       }
+
+      renderFocusBanner();
     }
 
 
@@ -2318,54 +2594,155 @@
       }
     }
 
-    function historySummary(items, formatter, max = 4) {
-      return (items || [])
-        .slice()
-        .sort((a, b) => Date.parse(b.lastSeen || 0) - Date.parse(a.lastSeen || 0))
-        .slice(0, max)
-        .map(formatter)
-        .join("");
+    function uniqueHistory(items, keyFn, max = 5) {
+      const seen = new Set();
+      const result = [];
+      for (const item of (items || []).slice().sort((a, b) => Date.parse(b.lastSeen || 0) - Date.parse(a.lastSeen || 0))) {
+        const key = keyFn(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        result.push(item);
+      }
+      return { visible: result.slice(0, max), hidden: Math.max(0, result.length - max), total: result.length };
     }
 
     function markerPopup(node) {
       const registry = registryDisplayNode(node.id) || {};
       const seenMap = registry.seenByInstances || {};
-      const seen = (node.seenBy || Object.values(seenMap) || []).map(item => `
-        <span style="display:inline-flex;align-items:center;gap:5px;margin:2px 4px 2px 0;">
-          <span style="width:8px;height:8px;border-radius:999px;background:${item.color || "#72d98b"};display:inline-block;"></span>${escapeHtml(item.name)}
-        </span>
-      `).join("");
-
-      const lat = Number(node.latitude);
-      const lon = Number(node.longitude);
-      const openUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=14/${lat}/${lon}`;
-      const sourceList = Object.entries(registry.sources || {}).map(([source, count]) => `${escapeHtml(source)} (${count})`).join(", ") || escapeHtml(node.source || node.positionSource || "nodes");
-      const nameHistory = historySummary(registry.nameHistory, item => `<div><span>${escapeHtml(item.sourceInstanceName || item.sourceType || "—")}</span>${escapeHtml(item.longName || item.shortName || "—")}</div>`);
-      const positionHistory = historySummary(registry.positionHistory, item => `<div><span>${escapeHtml(item.sourceInstanceName || item.sourceType || "—")}</span><span class="mono">${Number(item.latitude).toFixed(5)}, ${Number(item.longitude).toFixed(5)}</span></div>`);
-      const manual = registry.manualOverride ? `<span class="pill">override manuale</span>` : "";
-
+      const seen = (node.seenBy || Object.values(seenMap) || []).map(item => escapeHtml(item.name)).join(", ") || "—";
       return `
         <div class="popup">
-          <h3>${escapeHtml(displayNodeName(node))}${isNodeLocalForAnyInstance(node) ? " · MeshSense" : ""} ${manual}</h3>
+          <h3>${escapeHtml(displayNodeName(node))}</h3>
           <div class="muted mono">${escapeHtml(node.id || "—")}</div>
-          <div style="margin-top:6px;">${seen}</div>
           <div class="popup-grid">
-            <div><span>RSSI</span>${node.rssi ?? "—"}</div>
-            <div><span>SNR</span>${node.snr ?? "—"}</div>
-            <div><span>Hop</span>${node.hopsUsed ?? "—"} / ${node.hopStart ?? node.hopLimit ?? "—"}</div>
-            <div><span>Visto</span>${formatAge(node._lastHeardMs)}</div>
-            <div style="grid-column:1 / -1;"><span>Coordinate</span><span class="mono">${lat.toFixed(6)}, ${lon.toFixed(6)}</span></div>
-            <div style="grid-column:1 / -1;"><span>Fonti</span>${sourceList}</div>
-          </div>
-          ${nameHistory ? `<h4 style="margin:10px 0 4px;">Storico nomi</h4><div class="popup-grid">${nameHistory}</div>` : ""}
-          ${positionHistory ? `<h4 style="margin:10px 0 4px;">Storico posizioni</h4><div class="popup-grid">${positionHistory}</div>` : ""}
-          <div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;">
-            <a href="${openUrl}" target="_blank" rel="noreferrer">Apri in OSM</a>
-            <button class="btn" type="button" onclick="window.MeshSenseDashboard.editNode('${escapeHtml(node.id)}')">Modifica</button>
-            <button class="btn" type="button" onclick="window.MeshSenseDashboard.clearOverride('${escapeHtml(node.id)}')">Cancella override</button>
+            <div style="grid-column:1 / -1;"><span>Ultimo visto</span>${formatAge(node._lastHeardMs)}</div>
+            <div style="grid-column:1 / -1;"><span>Istanze</span>${seen}</div>
           </div>
         </div>
       `;
+    }
+
+    function selectedNodeInstances(node) {
+      const registry = registryDisplayNode(node.id) || {};
+      const seen = node.seenBy && node.seenBy.length ? node.seenBy : Object.values(registry.seenByInstances || {});
+      return seen.map(item => `
+        <span class="pill">
+          <span style="width:7px;height:7px;border-radius:999px;background:${item.color || "#72d98b"};display:inline-block;margin-right:5px;"></span>
+          ${escapeHtml(item.name || item.id || "Istanza")}
+        </span>
+      `).join("") || "—";
+    }
+
+    function traceRowsForSelectedNode() {
+      if (!state.selectedNodeId) return { all: [], filtered: [], totalFiltered: 0 };
+      const all = sortedTraceEdges().filter(edge => edgeMatchesSelectedNode(edge));
+      let filtered = all;
+      if (state.traceFilter === "out") filtered = all.filter(edge => traceDirectionForNode(edge) === "OUT");
+      if (state.traceFilter === "in") filtered = all.filter(edge => traceDirectionForNode(edge) === "IN");
+      return { all, filtered: filtered.slice(0, NODE_TRACE_TABLE_LIMIT), totalFiltered: filtered.length };
+    }
+
+    function renderSelectedNodePanel() {
+      if (!el.selectedNodeBody || !el.selectedNodeHint) return;
+      if (!state.selectedNodeId) {
+        el.selectedNodeHint.textContent = "Clicca un nodo sulla mappa";
+        el.selectedNodeBody.innerHTML = `<div class="muted">Nessun nodo selezionato.</div>`;
+        return;
+      }
+
+      const node = findNodeById(state.selectedNodeId, null, { requirePosition: false }) || { id: state.selectedNodeId };
+      const registry = registryDisplayNode(state.selectedNodeId) || {};
+      const coords = validLatLon(node) ? `${Number(node.latitude).toFixed(6)}, ${Number(node.longitude).toFixed(6)}` : "—";
+      const traces = traceRowsForSelectedNode();
+      const sourceList = Object.entries(registry.sources || {}).map(([source, count]) => `${escapeHtml(source)} (${count})`).join(", ") || "—";
+      const names = uniqueHistory(registry.nameHistory, item => `${item.longName || ""}|${item.shortName || ""}`);
+      const positions = uniqueHistory(registry.positionHistory, item => `${Number(item.latitude).toFixed(7)},${Number(item.longitude).toFixed(7)}`);
+      const nameRows = names.visible.map(item => `<div><strong>${escapeHtml(item.longName || item.shortName || "—")}</strong><div class="muted">${escapeHtml(item.sourceInstanceName || item.sourceType || "—")}</div></div>`).join("") || `<div class="muted">—</div>`;
+      const positionRows = positions.visible.map(item => `<div><strong class="mono">${Number(item.latitude).toFixed(6)}, ${Number(item.longitude).toFixed(6)}</strong><div class="muted">${escapeHtml(item.sourceInstanceName || item.sourceType || "—")}</div></div>`).join("") || `<div class="muted">—</div>`;
+      const rows = traces.filtered.map(edge => {
+        const peerId = tracePeerId(edge) || "";
+        const peer = peerId ? (findNodeById(peerId, edge.instanceId, { requirePosition: false }) || { id: peerId }) : null;
+        const path = edge.ids.map(id => displayNodeName(resolveTraceNode(edge, id) || { id })).join(" → ");
+        const hop = Math.max(0, (edge.ids || []).filter(isDrawableNodeId).length - 1);
+        return `
+          <tr>
+            <td><span class="pill">${traceDirectionForNode(edge)}</span></td>
+            <td><div>${escapeHtml(peer ? displayNodeName(peer) : "—")}</div><div class="muted mono">${escapeHtml(peerId || "—")}</div></td>
+            <td>${formatAge(edge.lastSeen)}</td>
+            <td><span class="mono">${hop || "—"}</span></td>
+            <td><span class="mono">${escapeHtml(path)}</span></td>
+            <td>${escapeHtml(edge.instanceName || "—")}</td>
+          </tr>
+        `;
+      }).join("") || `<tr><td colspan="6" class="muted">Nessuna trace collegata.</td></tr>`;
+
+      el.selectedNodeHint.textContent = `${traces.all.length} trace collegate`;
+      el.selectedNodeBody.innerHTML = `
+        <div class="node-detail-grid">
+          <div class="detail-box"><span>Nome nodo</span>${escapeHtml(displayNodeName(node))}</div>
+          <div class="detail-box"><span>NodeId</span><span class="mono">${escapeHtml(node.id || state.selectedNodeId)}</span></div>
+          <div class="detail-box"><span>Short name</span>${escapeHtml(node.shortName || "—")}</div>
+          <div class="detail-box"><span>Ultimo visto</span>${formatAge(node._lastHeardMs)}</div>
+          <div class="detail-box"><span>Istanze</span>${selectedNodeInstances(node)}</div>
+          <div class="detail-box"><span>Coordinate</span><span class="mono">${escapeHtml(coords)}</span></div>
+          <div class="detail-box"><span>RSSI / SNR ultimo</span><span class="mono">${node.rssi ?? "—"} / ${node.snr ?? "—"}</span></div>
+          <div class="detail-box"><span>Hop ultimo</span><span class="mono">${node.hopsUsed ?? "—"} / ${node.hopStart ?? node.hopLimit ?? "—"}</span></div>
+        </div>
+
+        <div class="node-panel-section">
+          <h3>Trace collegati <span class="muted">(${traces.totalFiltered}/${traces.all.length}, ultimi ${Math.min(NODE_TRACE_TABLE_LIMIT, traces.totalFiltered)})</span></h3>
+          <div class="filter-tabs" data-trace-filters>
+            <button class="btn ${state.traceFilter === "all" ? "active" : ""}" type="button" data-filter="all">Tutti</button>
+            <button class="btn ${state.traceFilter === "out" ? "active" : ""}" type="button" data-filter="out">Da questo nodo</button>
+            <button class="btn ${state.traceFilter === "in" ? "active" : ""}" type="button" data-filter="in">Verso questo nodo</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Direzione</th><th>Peer</th><th>Ultimo visto</th><th>Hop</th><th>Percorso</th><th>Istanza</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="node-panel-section">
+          <details class="advanced-details">
+            <summary>Dati avanzati</summary>
+            <div class="advanced-list">
+              <div><strong>Fonti</strong><div class="muted">${sourceList}</div></div>
+              <div><strong>Storico nomi</strong><div class="advanced-list">${nameRows}${names.hidden ? `<div class="muted">Mostra altro: ${names.hidden} valori nascosti.</div>` : ""}</div></div>
+              <div><strong>Storico posizioni</strong><div class="advanced-list">${positionRows}${positions.hidden ? `<div class="muted">Mostra altro: ${positions.hidden} valori nascosti.</div>` : ""}</div></div>
+              <div><strong>Debug</strong><div class="muted mono">sources=${escapeHtml(JSON.stringify(registry.sources || {}))}</div></div>
+            </div>
+          </details>
+        </div>
+      `;
+
+      el.selectedNodeBody.querySelectorAll("button[data-filter]").forEach(button => {
+        button.addEventListener("click", () => {
+          state.traceFilter = button.getAttribute("data-filter") || "all";
+          renderSelectedNodePanel();
+        });
+      });
+    }
+
+    function selectNode(node) {
+      const id = normalizeNodeId(node?.id || node);
+      if (!id) return;
+      state.selectedNodeId = id;
+      state.traceFilter = "all";
+      if (el.lines) el.lines.checked = true;
+      renderEdges();
+      renderMarkers();
+      renderSelectedNodePanel();
+    }
+
+    function clearNodeFocus() {
+      state.selectedNodeId = null;
+      state.traceFilter = "all";
+      state.focusPeerIds = new Set();
+      renderEdges();
+      renderMarkers();
+      renderSelectedNodePanel();
     }
 
 
@@ -2402,6 +2779,8 @@
         }
 
         marker.bindPopup(markerPopup(node));
+        marker.off("click");
+        marker.on("click", () => selectNode(node));
         marker.bindTooltip(`${shortNodeLabel(node)} · ${displayNodeName(node)} · ${node.id}`, { direction: "top", sticky: true });
         bounds.push([lat, lon]);
       }
@@ -2591,6 +2970,7 @@
       renderStats();
       renderMarkers();
       renderNodeTable();
+      renderSelectedNodePanel();
     }
 
     async function fetchJson(instance, path, timeoutMs = 7000) {
@@ -2902,11 +3282,15 @@
 
     el.btnRefreshAll.addEventListener("click", refreshAll);
     el.btnFit.addEventListener("click", () => fitMap());
-    el.btnCenterLocal.addEventListener("click", () => centerOnMeshSenseNodes() || fitMap());
+    el.btnCenterLocal.addEventListener("click", centerOnLocalNode);
     el.btnExport.addEventListener("click", exportConfig);
     el.onlyMapped.addEventListener("change", renderAll);
     el.merge.addEventListener("change", renderAll);
-    el.lines.addEventListener("change", renderAll);
+    el.lines.addEventListener("change", () => {
+      if (!el.lines.checked) state.focusPeerIds = new Set();
+      renderAll();
+    });
+    el.btnClearFocus.addEventListener("click", clearNodeFocus);
 
     el.importFile.addEventListener("change", async () => {
       const file = el.importFile.files && el.importFile.files[0];
@@ -2936,6 +3320,7 @@
       renderStats();
       renderMarkers();
       renderNodeTable();
+      renderSelectedNodePanel();
     }, 15000);
 
     setInterval(() => {
