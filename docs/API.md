@@ -2,15 +2,16 @@
 
 MeshSense exposes a public REST and WebSocket API for data already collected by the existing single Meshtastic connection. This API does not add multi-source connections, gateway selection, or multi-node deduplication.
 
-## Remote agent vs central dashboard mode
+## Standard dashboard vs multi-instance dashboard
 
-A MeshSense process with `MESHSENSE_ENABLE_INSTANCES_DASHBOARD=false` runs as a lightweight remote agent. In that mode:
+`MESHSENSE_ENABLE_INSTANCES_DASHBOARD=false` disables only the multi-instance dashboard at `/instances.html`. In that mode:
 
-- Dashboard/static UI routes, `/state`, and the UI state WebSocket are not served by the agent.
-- Only the lightweight remote endpoints are exposed: `GET /api/health`, `GET /api/nodes`, and `WS /api/live`.
-- The remote agent does not load, store, or manage the dashboard's instance list; aggregation stays in the central dashboard/browser/server.
+- `/` and `/index.html` continue to serve the standard local MeshSense dashboard.
+- Global dashboard assets such as JavaScript, CSS, images, favicon files, and Vite/static bundles continue to be served.
+- `/state`, the standard UI state WebSocket, and public API endpoints such as `GET /api/health`, `GET /api/nodes`, and `WS /api/live` continue to work.
+- `GET /instances.html` returns `403` with `MeshSense multi-instance dashboard disabled on this agent.`
 
-Leave `MESHSENSE_ENABLE_INSTANCES_DASHBOARD=true` on the central dashboard host to expose the dashboard UI and the extended local debugging endpoints.
+Leave `MESHSENSE_ENABLE_INSTANCES_DASHBOARD=true` on the central dashboard host to expose `/instances.html`.
 
 Trace retention is bounded by `MESHSENSE_TRACE_HISTORY_LIMIT` (default `1000`, max `10000`). Trace API responses are additionally capped by `MESHSENSE_TRACE_SNAPSHOT_DEFAULT_LIMIT` (default `200`, max `10000`) unless a smaller explicit `limit` is requested.
 
