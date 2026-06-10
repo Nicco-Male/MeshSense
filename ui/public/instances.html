@@ -716,16 +716,44 @@
       isolation: isolate;
     }
 
-    .focus-banner {
+    .map-controls {
       position: absolute;
       left: 14px;
       right: 14px;
       top: 14px;
       z-index: 900;
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .map-controls .btn,
+    .map-controls .focus-banner {
+      pointer-events: auto;
+    }
+
+    .trace-toggle-btn {
+      flex: 0 0 auto;
+      border-color: rgba(255, 122, 26, 0.5);
+      background: rgba(7, 17, 13, 0.9);
+      color: var(--text);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.34);
+      backdrop-filter: blur(8px);
+    }
+
+    .trace-toggle-btn.active {
+      border-color: rgba(250, 204, 21, 0.66);
+      color: var(--yellow);
+    }
+
+    .focus-banner {
+      flex: 1 1 auto;
       display: none;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
+      min-width: 0;
       padding: 10px 12px;
       border: 1px solid rgba(250, 204, 21, 0.42);
       border-radius: 14px;
@@ -1167,6 +1195,15 @@
       .map-wrap {
         min-height: 480px;
       }
+
+      .map-controls {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .focus-banner {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -1270,17 +1307,16 @@
                 <input type="checkbox" id="toggleMerge" checked />
                 Unisci stesso nodo
               </label>
-              <label class="toggle">
-                <input type="checkbox" id="toggleLines" />
-                Linee traceroute
-              </label>
               <button class="btn" id="btnCenterLocal" type="button">Centra nodo locale</button>
             </div>
           </div>
           <div class="map-wrap">
-            <div class="focus-banner" id="focusBanner">
-              <span id="focusText">—</span>
-              <button class="btn" id="btnClearFocus" type="button">Mostra tutti</button>
+            <div class="map-controls">
+              <button class="btn trace-toggle-btn" id="btnToggleTraces" type="button">Mostra traceroute</button>
+              <div class="focus-banner" id="focusBanner">
+                <span id="focusText">—</span>
+                <button class="btn" id="btnClearFocus" type="button">Esci dal focus</button>
+              </div>
             </div>
             <div id="map"></div>
           </div>
@@ -1348,6 +1384,7 @@
       traceLayer: null,
       initialCentered: false,
       selectedNodeId: null,
+      tracesVisible: false,
       traceFilter: "all",
       focusPeerIds: new Set(),
       visibleTraceCount: 0,
@@ -1375,7 +1412,7 @@
       onlyMapped: document.getElementById("toggleOnlyMapped"),
       autoFit: document.getElementById("toggleAutoFit"),
       merge: document.getElementById("toggleMerge"),
-      lines: document.getElementById("toggleLines"),
+      btnToggleTraces: document.getElementById("btnToggleTraces"),
       btnCenterLocal: document.getElementById("btnCenterLocal"),
       focusBanner: document.getElementById("focusBanner"),
       focusText: document.getElementById("focusText"),
@@ -2327,6 +2364,13 @@
       }
     }
 
+    function renderTraceToggle() {
+      if (!el.btnToggleTraces) return;
+      el.btnToggleTraces.textContent = state.tracesVisible ? "Nascondi traceroute" : "Mostra traceroute";
+      el.btnToggleTraces.classList.toggle("active", state.tracesVisible);
+      el.btnToggleTraces.setAttribute("aria-pressed", state.tracesVisible ? "true" : "false");
+    }
+
     function renderFocusBanner() {
       if (!el.focusBanner || !el.focusText) return;
       if (!state.selectedNodeId) {
@@ -2340,8 +2384,9 @@
     }
 
     function renderEdges() {
+      renderTraceToggle();
       if (!state.traceLayer) return;
-      const enabled = !!(el.lines && el.lines.checked);
+      const enabled = !!state.tracesVisible;
       const alive = new Set();
 
       if (!enabled) {
@@ -2730,7 +2775,6 @@
       if (!id) return;
       state.selectedNodeId = id;
       state.traceFilter = "all";
-      if (el.lines) el.lines.checked = true;
       renderEdges();
       renderMarkers();
       renderSelectedNodePanel();
@@ -2743,6 +2787,12 @@
       renderEdges();
       renderMarkers();
       renderSelectedNodePanel();
+    }
+
+    function toggleTraces() {
+      state.tracesVisible = !state.tracesVisible;
+      if (!state.tracesVisible) state.focusPeerIds = new Set();
+      renderAll();
     }
 
 
@@ -3286,10 +3336,7 @@
     el.btnExport.addEventListener("click", exportConfig);
     el.onlyMapped.addEventListener("change", renderAll);
     el.merge.addEventListener("change", renderAll);
-    el.lines.addEventListener("change", () => {
-      if (!el.lines.checked) state.focusPeerIds = new Set();
-      renderAll();
-    });
+    el.btnToggleTraces.addEventListener("click", toggleTraces);
     el.btnClearFocus.addEventListener("click", clearNodeFocus);
 
     el.importFile.addEventListener("change", async () => {
