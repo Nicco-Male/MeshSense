@@ -9,7 +9,7 @@ import { app, createRoutes, finalize, server } from './lib/server'
 import { logRuntimeFlags } from './lib/runtimeFlags'
 import { installPublicApi } from './lib/publicApi'
 import './meshtastic'
-import { connect, disconnect, deleteNodes, requestPosition, send, traceRoute, setPosition, deviceConfig } from './meshtastic'
+import { connect, disconnect, deleteNodes, requestPosition, requestUserInfo, getUserInfoRequestStatus, send, traceRoute, setPosition, deviceConfig } from './meshtastic'
 import { isSerialPath, listSerialPorts } from './lib/serial'
 import { address, apiPort, currentTime, apiHostname, accessKey, autoConnectOnStartup, meshSenseNewsDate, allowRemoteMessaging, connectionStatus } from './vars'
 import { hostname } from 'os'
@@ -109,6 +109,42 @@ createRoutes((app) => {
         error: errorDetails(error)
       })
       return res.status(500).json({ ok: false, error: 'Failed to request position.', connectionStatus: connectionStatus.value })
+    }
+  })
+
+  app.post(['/requestUserInfo', '/api/nodes/:nodeId/requestUserInfo'], async (req, res) => {
+    let destination = Number(req.params.nodeId ?? req.body.destination ?? req.body.nodeId)
+    if (!Number.isFinite(destination) || !Number.isInteger(destination) || destination < 0 || destination > 0xffffffff) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid destination. destination/nodeId must be a finite numeric Meshtastic node number.'
+      })
+    }
+
+    let status = connectionStatus.value
+    if (status != 'connected') {
+      console.warn('[express] /requestUserInfo rejected; not connected', { destination, connectionStatus: status })
+      return res.status(409).json({ ok: false, error: 'Meshtastic connection is not connected.', connectionStatus: status })
+    }
+
+    try {
+      let result = await requestUserInfo(destination)
+      console.log('[express] /requestUserInfo sent', { destination, connectionStatus: connectionStatus.value, ...result })
+      return res.json({ ok: true, destination, ...result, request: getUserInfoRequestStatus(destination) })
+    } catch (error) {
+      console.error('[express] /requestUserInfo failed', {
+        destination,
+        connectionStatus: connectionStatus.value,
+        error: errorDetails(error)
+      })
+      let statusCode = error?.status == 429 ? 429 : 500
+      return res.status(statusCode).json({
+        ok: false,
+        error: statusCode == 429 ? 'User info request rate limited.' : 'Failed to request user info.',
+        connectionStatus: connectionStatus.value,
+        retryAfterMs: error?.retryAfterMs,
+        request: getUserInfoRequestStatus(destination)
+      })
     }
   })
 

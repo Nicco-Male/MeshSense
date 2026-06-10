@@ -59,6 +59,13 @@ let connectionGeneration = 0
 /** Tracks when nodes were last requested a traceroute: `traceRouteLog[nodeNum]` */
 let traceRouteLog: Record<number, number> = {}
 
+/** Last channel index observed from each node's received packets. */
+let lastObservedNodeChannel: Record<number, number> = {}
+let userInfoRequestLog: Record<number, number> = {}
+let pendingUserInfoRequests: Record<number, { timer: ReturnType<typeof setTimeout>; requestedAt: number; packetId?: number }> = {}
+const userInfoRequestRateLimitMs = 60_000
+export const userInfoRequestTimeoutMs = 30_000
+
 let globalTracerouteRateLimitSec = 60
 
 if (tracerouteRateLimit.value < 15) tracerouteRateLimit.set(15)
@@ -263,7 +270,28 @@ function parsePayloadBytes(payload?: Uint8Array | Record<string, number>) {
 }
 
 const neighborInfoPortnum = Protobuf.Portnums?.PortNum?.NEIGHBORINFO_APP ?? Protobuf.Portnums?.PortNum?.NEIGHBOR_INFO_APP ?? 71
+const nodeInfoPortnum = Protobuf.Portnums?.PortNum?.NODEINFO_APP ?? 4
 let didWarnMissingNeighborInfoPortnum = false
+
+function isFiniteChannelIndex(channel: any): channel is number {
+  return Number.isInteger(channel) && channel >= 0
+}
+
+function rememberObservedChannel(nodeNum: number, channel: any) {
+  if (nodeNum && isFiniteChannelIndex(channel)) lastObservedNodeChannel[nodeNum] = channel
+}
+
+function nodeFirstSeen(nodeNum: number, fallback = Date.now() / 1000) {
+  return nodes.value.find((n) => n.num == nodeNum)?.firstSeen ?? fallback
+}
+
+function markUserInfoResponse(nodeNum: number) {
+  let pending = pendingUserInfoRequests[nodeNum]
+  if (pending) {
+    clearTimeout(pending.timer)
+    delete pendingUserInfoRequests[nodeNum]
+  }
+}
 
 function processDecodedPortnumPacket(packet: Protobuf.Mesh.MeshPacket) {
   const decodedData = packet.payloadVariant?.case == 'decoded' ? packet.payloadVariant.value : undefined
@@ -313,6 +341,10 @@ export function reset() {
   deleteInProgress = false
   deviceConfig = {}
   pendingTraceroutes.set([])
+  lastObservedNodeChannel = {}
+  userInfoRequestLog = {}
+  for (let pending of Object.values(pendingUserInfoRequests)) clearTimeout(pending.timer)
+  pendingUserInfoRequests = {}
 }
 
 /**
@@ -419,11 +451,15 @@ export async function connect(address?: string) {
   connection.events.onMeshPacket.subscribe((e: Protobuf.Mesh.MeshPacket) => {
     if (e.from) {
       markValidRadioData()
+      rememberObservedChannel(e.from, e.channel)
+      let now = Date.now() / 1000
       let updates: any = {
         num: e.from,
         viaMqtt: e.viaMqtt,
-        lastHeard: Date.now() / 1000
+        lastHeard: now,
+        firstSeen: nodeFirstSeen(e.from, now)
       }
+      if (isFiniteChannelIndex(e.channel)) updates.channel = e.channel
 
       if (e.hopStart) {
         Object.assign(updates, {
@@ -468,6 +504,19 @@ export async function connect(address?: string) {
   let pendingNodeInfoPackets: any[] = []
   let nodeInfoBatchTimer: ReturnType<typeof setTimeout> | undefined
 
+  function processNodeInfoPacket(rawNodeInfo: any) {
+    let e = copy(rawNodeInfo)
+    let existingNode = nodes.value.find((n) => e.num == n.num)
+    if (isFiniteChannelIndex(e.channel)) rememberObservedChannel(e.num, e.channel)
+    e.firstSeen = existingNode?.firstSeen ?? e.firstSeen ?? e.lastHeard ?? Date.now() / 1000
+    if (e.user) e.userInfoUpdatedAt = Date.now()
+    if (existingNode?.lastHeard > e.lastHeard) e.lastHeard = existingNode.lastHeard
+    checkForCachedRoute(e as any)
+    let node = nodes.upsert(e)
+    if (e.user) markUserInfoResponse(e.num)
+    recordNodeUpdate(node)
+  }
+
   function processNodeInfoBatch() {
     nodeInfoBatchTimer = undefined
     if (currentConnectionGeneration != connectionGeneration) {
@@ -475,18 +524,16 @@ export async function connect(address?: string) {
       return
     }
     let batch = pendingNodeInfoPackets.splice(0, runtimeFlags.nodeInfoBatchSize)
-    for (let rawNodeInfo of batch) {
-      let e = copy(rawNodeInfo)
-      let existingNode = nodes.value.find((n) => e.num == n.num)
-      if (existingNode?.lastHeard > e.lastHeard) e.lastHeard = existingNode.lastHeard
-      checkForCachedRoute(e as any)
-      recordNodeUpdate(nodes.upsert(e))
-    }
+    for (let rawNodeInfo of batch) processNodeInfoPacket(rawNodeInfo)
     if (pendingNodeInfoPackets.length) nodeInfoBatchTimer = setTimeout(processNodeInfoBatch, runtimeFlags.nodeInfoBatchIntervalMs)
   }
 
   function queueNodeInfoPacket(e: any) {
     if (currentConnectionGeneration != connectionGeneration) return
+    if (e?.num && pendingUserInfoRequests[e.num]) {
+      processNodeInfoPacket(e)
+      return
+    }
     pendingNodeInfoPackets.push(e)
     if (!nodeInfoBatchTimer) nodeInfoBatchTimer = setTimeout(processNodeInfoBatch, runtimeFlags.nodeInfoBatchIntervalMs)
   }
@@ -503,7 +550,9 @@ export async function connect(address?: string) {
     let packet: MeshPacket
     if (id) packet = packets.upsert({ id, data })
     if (from) {
-      let node = nodes.upsert({ num: from, user: data })
+      if (packet) rememberObservedChannel(from, packet.channel)
+      let node = nodes.upsert({ num: from, user: data, firstSeen: nodeFirstSeen(from), userInfoUpdatedAt: Date.now() })
+      markUserInfoResponse(from)
       recordNodeUpdate(node)
       if (packet?.viaMqtt === false) sendToMeshMap({ num: from, user: data }, node, packet)
     }
@@ -726,6 +775,60 @@ async function processTraceRoutes() {
   setTimeout(() => {
     pendingTraceroutes.value.length ? processTraceRoutes() : (queueProcessing = false)
   }, globalTracerouteRateLimitSec * 1000)
+}
+
+function getNodeUserInfoChannel(destination: number) {
+  let node = nodes.value.find((n) => n.num == destination)
+  if (isFiniteChannelIndex(node?.channel)) return node.channel
+  if (isFiniteChannelIndex(lastObservedNodeChannel[destination])) return lastObservedNodeChannel[destination]
+  return 0
+}
+
+export function getUserInfoRequestStatus(destination: number) {
+  let pending = pendingUserInfoRequests[destination]
+  return {
+    pending: Boolean(pending),
+    requestedAt: pending?.requestedAt,
+    lastRequestedAt: userInfoRequestLog[destination],
+    timeoutMs: userInfoRequestTimeoutMs,
+    rateLimitMs: userInfoRequestRateLimitMs
+  }
+}
+
+export async function requestUserInfo(destination: number) {
+  let now = Date.now()
+  let pending = pendingUserInfoRequests[destination]
+  if (pending) return { packetId: pending.packetId, channel: getNodeUserInfoChannel(destination), status: 'pending' as const, timeoutMs: userInfoRequestTimeoutMs }
+
+  let lastRequest = userInfoRequestLog[destination] ?? 0
+  let retryAfterMs = userInfoRequestRateLimitMs - (now - lastRequest)
+  if (retryAfterMs > 0) {
+    let error: any = new Error(`Node user info request rate limited for ${Math.ceil(retryAfterMs / 1000)}s`)
+    error.status = 429
+    error.retryAfterMs = retryAfterMs
+    throw error
+  }
+
+  let channel = getNodeUserInfoChannel(destination)
+  console.log('[Meshtastic] Requesting User Info for', destination, 'on channel', channel)
+  userInfoRequestLog[destination] = now
+  pendingUserInfoRequests[destination] = {
+    requestedAt: now,
+    timer: setTimeout(() => {
+      delete pendingUserInfoRequests[destination]
+    }, userInfoRequestTimeoutMs)
+  }
+
+  try {
+    let packetId = await connection.sendPacket(new Uint8Array(), nodeInfoPortnum, destination, channel as any, true, true)
+    pendingUserInfoRequests[destination].packetId = packetId
+    return { packetId, channel, status: 'queued' as const, timeoutMs: userInfoRequestTimeoutMs }
+  } catch (error) {
+    clearTimeout(pendingUserInfoRequests[destination]?.timer)
+    delete pendingUserInfoRequests[destination]
+    userInfoRequestLog[destination] = 0
+    throw error
+  }
 }
 
 export async function requestPosition(destination: number) {

@@ -69,10 +69,12 @@ export type User = {
   id: string
   longName: string
   shortName: string
-  macaddr: string
+  macaddr: string | Uint8Array
   hwModel: string | number
   isLicensed: boolean
   role: number
+  publicKey?: string | Uint8Array | Record<string, number> | number[]
+  isUnmessagable?: boolean
 }
 
 export type Position = {
@@ -132,6 +134,8 @@ export type NodeInfo = {
   rssi?: number
   trace?: TraceRouteData
   approximatePosition?: { longitude: number; latitude: number } | false
+  firstSeen?: number
+  userInfoUpdatedAt?: number
 }
 
 export type TraceRouteData = {
