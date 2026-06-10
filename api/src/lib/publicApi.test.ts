@@ -11,6 +11,7 @@ import {
   getCurrentNodeSnapshot,
   getTraceRouteSnapshot,
   getPacketSnapshot,
+  getPublicNodeSnapshot,
   ensureTraceHistoryBootstrapped,
   normalizeRadioMetrics,
   recordPacket,
@@ -169,6 +170,10 @@ assert.equal(snapshot[1].longitude, 9.1234567)
 assert.equal(normalizeNode({ num: 3, latitude_i: 451000000, longitude_i: 91000000 }).latitude, 45.1)
 assert.equal(normalizeNode({ num: 3, position: { latitude: 45.2, longitude: 9.2 } }).longitude, 9.2)
 assert.deepEqual(snapshot[1].trace, { route: [0x1234abcd, 1] })
+const publicSnapshot = getPublicNodeSnapshot()
+assert.equal(publicSnapshot[1].trace, undefined)
+assert.equal(publicSnapshot[1].position, undefined)
+assert.equal(publicSnapshot[1].user, undefined)
 assert.equal(runtimeStore.nodesSeen, 2)
 nodes.set([] as any)
 runtimeStore.nodes.clear()
@@ -200,6 +205,10 @@ assert.deepEqual(getTraceRouteSnapshot()[0].traceRoutes?.map((route) => route.no
   ['!1234abcd', '!00000001', '!00000002'],
   ['!00000002', '!00000001', '!1234abcd']
 ])
+assert.equal(getTraceRouteSnapshot()[0].raw, undefined)
+assert.equal(getTraceRouteSnapshot()[0].nodeMetadata, undefined)
+assert.equal(getTraceRouteSnapshot({ includeRaw: true })[0].raw !== undefined, true)
+assert.equal(getTraceRouteSnapshot({ includeMetadata: true })[0].nodeMetadata === undefined || typeof getTraceRouteSnapshot({ includeMetadata: true })[0].nodeMetadata == 'object', true)
 packetHistory.set([] as any)
 runtimeStore.traceRoutes.clear()
 runtimeStore.packets = []

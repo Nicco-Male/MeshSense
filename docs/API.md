@@ -2,6 +2,18 @@
 
 MeshSense exposes a public REST and WebSocket API for data already collected by the existing single Meshtastic connection. This API does not add multi-source connections, gateway selection, or multi-node deduplication.
 
+## Remote agent vs central dashboard mode
+
+A MeshSense process with `MESHSENSE_ENABLE_INSTANCES_DASHBOARD=false` runs as a lightweight remote agent. In that mode:
+
+- Dashboard/static UI routes, `/state`, and the UI state WebSocket are not served by the agent.
+- Only the lightweight remote endpoints are exposed: `GET /api/health`, `GET /api/nodes`, and `WS /api/live`.
+- The remote agent does not load, store, or manage the dashboard's instance list; aggregation stays in the central dashboard/browser/server.
+
+Leave `MESHSENSE_ENABLE_INSTANCES_DASHBOARD=true` on the central dashboard host to expose the dashboard UI and the extended local debugging endpoints.
+
+Trace retention is bounded by `MESHSENSE_TRACE_HISTORY_LIMIT` (default `1000`, max `10000`). Trace API responses are additionally capped by `MESHSENSE_TRACE_SNAPSHOT_DEFAULT_LIMIT` (default `200`, max `10000`) unless a smaller explicit `limit` is requested.
+
 ## CORS
 
 CORS is enabled for external dashboards. By default all origins are allowed. Set one of these environment variables to restrict the allowed origin:
@@ -108,8 +120,7 @@ Returns recently received packets normalized as:
     "hasRadioMetrics": true,
     "hopLimit": 3,
     "hopStart": 5,
-    "hopsUsed": 2,
-    "raw": {}
+    "hopsUsed": 2
   }
 ]
 ```
@@ -131,12 +142,30 @@ Supported query parameters:
 - `to`
 - `portnum`
 - `since`: Unix timestamp seconds, Unix timestamp milliseconds, or an ISO timestamp
+- `includeRaw=true`: include raw packet data for debugging
 
 Examples:
 
 ```bash
 curl 'http://localhost:5920/api/packets?limit=50'
 curl 'http://localhost:5920/api/packets?from=305441741&portnum=1&since=2026-06-08T12:00:00.000Z'
+```
+
+### `GET /api/traces`
+
+Returns bounded trace-route packets. This endpoint is only available in central dashboard mode and is intentionally separate from `/api/nodes` so trace history is not shipped with every base node snapshot.
+
+Default responses omit `raw` packet payloads and `nodeMetadata` to avoid large debug payloads. Use explicit query parameters only when needed:
+
+- `limit`: default `MESHSENSE_TRACE_SNAPSHOT_DEFAULT_LIMIT`, max `MESHSENSE_TRACE_HISTORY_LIMIT`
+- `includeMetadata=true`: include compact per-node metadata for nodes in trace routes
+- `includeRaw=true`: include raw trace packet data for debugging
+
+Example:
+
+```bash
+curl 'http://localhost:5920/api/traces?limit=50'
+curl 'http://localhost:5920/api/traces?limit=50&includeMetadata=true'
 ```
 
 ### `GET /api/messages`
@@ -188,7 +217,7 @@ Sent immediately after connection:
 
 ### Packet received event
 
-Broadcast when a Meshtastic packet arrives:
+Broadcast when a Meshtastic packet arrives in central dashboard mode. Remote-agent mode keeps `/api/live` lightweight and only sends `hello` and `node_update` events by default:
 
 ```json
 {
@@ -210,8 +239,7 @@ Broadcast when a Meshtastic packet arrives:
     "hasRadioMetrics": true,
     "hopLimit": 3,
     "hopStart": 5,
-    "hopsUsed": 2,
-    "raw": {}
+    "hopsUsed": 2
   }
 }
 ```
@@ -259,8 +287,7 @@ Broadcast when a text message arrives:
     "portnum": 1,
     "app": "TEXT_MESSAGE_APP",
     "type": "text",
-    "packet": {},
-    "raw": {}
+    "packet": {}
   }
 }
 ```

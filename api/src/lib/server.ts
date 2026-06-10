@@ -7,7 +7,7 @@ import { State } from './state'
 // import { store } from './persistence'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { staticDirectory } from './paths'
-import { runtimeFlags } from './runtimeFlags'
+import { isRemoteAgentMode, runtimeFlags } from './runtimeFlags'
 import getPort from 'get-port'
 import { IncomingMessage, Server, ServerResponse } from 'http'
 
@@ -63,7 +63,7 @@ export let wss: WebSocketHTTPServer
 async function initSever() {
   /** Begin Listening for connections */
   server = app.listen(Number(process.env.PORT) || (await getPort({ port: 5920 })))
-  wss = new WebSocketHTTPServer(server, { path: '/ws' })
+  wss = new WebSocketHTTPServer(server, { path: isRemoteAgentMode ? '/__meshsense_disabled_ws' : '/ws' })
 
   State.subscribe(({ state, action, args }) => {
     wss.send('state', { name: state.name, action, args }, { skip: state.flags.socket })
@@ -91,7 +91,7 @@ async function initSever() {
     next()
   })
 
-  app.get('/state', (_, res) => res.json(State.getStateData()))
+  if (!isRemoteAgentMode) app.get('/state', (_, res) => res.json(State.getStateData()))
 
   // Electron Hook if present
   let parentPort = process['parentPort']
@@ -114,15 +114,17 @@ async function initSever() {
     parentPort?.postMessage({ event: 'setUpdateChannel', body: v })
   })
 
-  app.get('/installUpdate', (req, res) => {
-    parentPort?.postMessage({ event: 'installUpdate' })
-    res.sendStatus(200)
-  })
+  if (!isRemoteAgentMode) {
+    app.get('/installUpdate', (req, res) => {
+      parentPort?.postMessage({ event: 'installUpdate' })
+      res.sendStatus(200)
+    })
 
-  app.get('/checkUpdate', (req, res) => {
-    parentPort?.postMessage({ event: 'checkUpdate' })
-    res.sendStatus(200)
-  })
+    app.get('/checkUpdate', (req, res) => {
+      parentPort?.postMessage({ event: 'checkUpdate' })
+      res.sendStatus(200)
+    })
+  }
 }
 
 export async function createRoutes(callback: (app: Express) => void) {
@@ -140,12 +142,13 @@ export function finalize() {
   })
 
   if (!runtimeFlags.enableInstancesDashboard) {
-    app.get('/instances.html', (_req, res) => {
-      res.status(404).send('The MeshSense instances dashboard is disabled by MESHSENSE_ENABLE_INSTANCES_DASHBOARD=false.')
+    app.use((req, res, next) => {
+      if (req.path.startsWith('/api/')) return next()
+      res.status(404).send('The MeshSense dashboard is disabled on this remote agent by MESHSENSE_ENABLE_INSTANCES_DASHBOARD=false.')
     })
+  } else {
+    'DEV_UI_URL' in process.env ? enableDevProxy() : app.use(express.static(staticDirectory))
   }
-
-  'DEV_UI_URL' in process.env ? enableDevProxy() : app.use(express.static(staticDirectory))
   console.log('Server listening', server.address())
 }
 
