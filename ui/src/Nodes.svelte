@@ -41,6 +41,10 @@
   let pendingPositionRequests = new Set<number>()
   let positionRequestState: Record<number, 'sent' | 'error'> = {}
   let positionRequestTimers: Record<number, ReturnType<typeof setTimeout>> = {}
+  let userInfoRequestState: Record<number, { state: 'sent' | 'waiting' | 'received' | 'timeout' | 'error' | 'rateLimited'; requestedAt: number; message?: string }> = {}
+  let userInfoRequestTimers: Record<number, ReturnType<typeof setTimeout>> = {}
+  const userInfoRequestCooldownMs = 60_000
+  const userInfoRequestTimeoutMs = 30_000
 
   async function requestNodePosition(nodeNum: number) {
     if (pendingPositionRequests.has(nodeNum)) return
@@ -57,6 +61,89 @@
     } finally {
       pendingPositionRequests = withoutPendingPositionRequest(nodeNum)
     }
+  }
+
+  async function requestNodeUserInfo(nodeNum: number) {
+    if (isUserInfoRequestDisabled(nodeNum)) return
+
+    setUserInfoRequestState(nodeNum, 'sent', 'Richiesta inviata')
+
+    try {
+      let response = await axios.post(`/api/nodes/${nodeNum}/requestUserInfo`, { destination: nodeNum })
+      setUserInfoRequestState(nodeNum, 'waiting', `In attesa risposta sul canale ${response.data?.channel ?? '?'}`)
+    } catch (error) {
+      console.error('Unable to request node user info', { nodeNum, error })
+      let retryAfterMs = error?.response?.data?.retryAfterMs
+      setUserInfoRequestState(nodeNum, retryAfterMs ? 'rateLimited' : 'error', retryAfterMs ? `Riprova tra ${Math.ceil(retryAfterMs / 1000)}s` : 'Richiesta non inviata')
+    }
+  }
+
+  function setUserInfoRequestState(nodeNum: number, state: 'sent' | 'waiting' | 'received' | 'timeout' | 'error' | 'rateLimited', message?: string) {
+    if (userInfoRequestTimers[nodeNum]) clearTimeout(userInfoRequestTimers[nodeNum])
+    let requestedAt = userInfoRequestState[nodeNum]?.requestedAt ?? Date.now()
+    if (state == 'sent') requestedAt = Date.now()
+    userInfoRequestState = { ...userInfoRequestState, [nodeNum]: { state, requestedAt, message } }
+
+    let delay = state == 'waiting' ? userInfoRequestTimeoutMs : state == 'received' || state == 'timeout' || state == 'error' ? 5000 : userInfoRequestCooldownMs
+    userInfoRequestTimers = {
+      ...userInfoRequestTimers,
+      [nodeNum]: setTimeout(() => {
+        if (state == 'waiting') {
+          userInfoRequestState = { ...userInfoRequestState, [nodeNum]: { state: 'timeout', requestedAt, message: 'Timeout risposta' } }
+          userInfoRequestTimers = {
+            ...userInfoRequestTimers,
+            [nodeNum]: setTimeout(() => clearUserInfoRequestState(nodeNum), 5000)
+          }
+        } else {
+          clearUserInfoRequestState(nodeNum)
+        }
+      }, delay)
+    }
+  }
+
+  function clearUserInfoRequestState(nodeNum: number) {
+    if (userInfoRequestTimers[nodeNum]) clearTimeout(userInfoRequestTimers[nodeNum])
+    let { [nodeNum]: _removedState, ...nextState } = userInfoRequestState
+    let { [nodeNum]: _removedTimer, ...nextTimers } = userInfoRequestTimers
+    userInfoRequestState = nextState
+    userInfoRequestTimers = nextTimers
+  }
+
+  function isUserInfoRequestDisabled(nodeNum: number) {
+    let current = userInfoRequestState[nodeNum]
+    return current?.state == 'sent' || current?.state == 'waiting' || (current?.requestedAt && Date.now() - current.requestedAt < userInfoRequestCooldownMs)
+  }
+
+  function userInfoRequestFeedback(nodeNum: number) {
+    let current = userInfoRequestState[nodeNum]
+    if (!current) return ''
+    if (current.message) return current.message
+    if (current.state == 'sent') return 'Richiesta inviata'
+    if (current.state == 'waiting') return 'In attesa risposta'
+    if (current.state == 'received') return 'Risposta ricevuta'
+    if (current.state == 'timeout') return 'Timeout risposta'
+    if (current.state == 'rateLimited') return 'Rate limit attivo'
+    return 'Errore richiesta'
+  }
+
+  function formatDateTime(seconds?: number) {
+    if (!seconds) return '—'
+    return new Date(seconds * 1000).toLocaleString()
+  }
+
+  function bytesToHex(value: any) {
+    if (!value) return ''
+    let bytes: number[]
+    if (typeof value == 'string') return value
+    if (Array.isArray(value)) bytes = value
+    else if (value instanceof Uint8Array) bytes = Array.from(value)
+    else if (typeof value == 'object') bytes = Object.entries(value).sort(([a], [b]) => Number(a) - Number(b)).map(([, byte]) => Number(byte))
+    else return String(value)
+    return bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+
+  function displayValue(value: any) {
+    return value === undefined || value === null || value === '' ? '—' : String(value)
   }
 
   function setPositionRequestState(nodeNum: number, state: 'sent' | 'error') {
@@ -93,6 +180,17 @@
     return 'Request Position'
   }
 
+  $: if (selectedNode) {
+    let updatedSelectedNode = $nodes.find((node) => node.num == selectedNode.num)
+    if (updatedSelectedNode && updatedSelectedNode !== selectedNode) selectedNode = updatedSelectedNode
+  }
+
+  $: for (let node of $nodes) {
+    let request = userInfoRequestState[node.num]
+    if (request?.state == 'waiting' && node.userInfoUpdatedAt && node.userInfoUpdatedAt >= request.requestedAt) {
+      setUserInfoRequestState(node.num, 'received', 'Risposta ricevuta')
+    }
+  }
 
   $: if ($selectNodeFilterInput) {
     nodeFilterInput.select()
@@ -252,19 +350,84 @@
 <Modal title="Node Detail" visible={selectedNode != undefined}>
   <div class="flex items-center gap-2 flex-wrap">
     <div class="flex items-center bg-black/20 rounded gap-2 grow">
-      <h2 class="rounded">Name</h2>
-      <div class="grow">{selectedNode?.user?.longName}</div>
+      <h2 class="rounded">Long name</h2>
+      <div class="grow">{displayValue(selectedNode?.user?.longName)}</div>
     </div>
 
     <div class="flex items-center bg-black/20 rounded gap-2 grow">
-      <h2 class="rounded">Node Num</h2>
+      <h2 class="rounded">Short name</h2>
+      <div class="grow">{displayValue(selectedNode?.user?.shortName)}</div>
+    </div>
+
+    <div class="flex items-center bg-black/20 rounded gap-2 grow">
+      <h2 class="rounded">Node ID</h2>
+      <div class="grow">{selectedNode?.user?.id || '!' + String(selectedNode?.num?.toString(16)?.padStart(8, '0'))}</div>
+    </div>
+
+    <div class="flex items-center bg-black/20 rounded gap-2 grow">
+      <h2 class="rounded">Numero nodo</h2>
       <div class="grow">{String(selectedNode?.num)}</div>
     </div>
 
     <div class="flex items-center bg-black/20 rounded gap-2 grow">
-      <h2 class="rounded">User ID</h2>
-      <div class="grow">!{String(selectedNode?.num?.toString(16)?.padStart(8, '0'))}</div>
+      <h2 class="rounded">Hardware</h2>
+      <div class="grow">{displayValue(selectedNode?.user?.hwModel)}</div>
     </div>
+
+    <div class="flex items-center bg-black/20 rounded gap-2 grow">
+      <h2 class="rounded">Ruolo</h2>
+      <div class="grow">
+        {#if selectedNode?.user?.role != undefined}
+          {@const roleDefinition = getNodeRoleDefinition(selectedNode.user.role)}
+          {roleDefinition?.label ?? selectedNode.user.role}
+        {:else}
+          —
+        {/if}
+      </div>
+    </div>
+
+    {#if selectedNode?.user?.publicKey}
+      <div class="flex items-center bg-black/20 rounded gap-2 grow min-w-full">
+        <h2 class="rounded">Public key</h2>
+        <div class="grow break-all">{bytesToHex(selectedNode.user.publicKey)}</div>
+      </div>
+    {/if}
+
+    {#if selectedNode?.user?.isLicensed != undefined}
+      <div class="flex items-center bg-black/20 rounded gap-2 grow">
+        <h2 class="rounded">Licensed</h2>
+        <div class="grow">{selectedNode.user.isLicensed ? 'Sì' : 'No'}</div>
+      </div>
+    {/if}
+
+    {#if selectedNode?.user?.isUnmessagable != undefined}
+      <div class="flex items-center bg-black/20 rounded gap-2 grow">
+        <h2 class="rounded">Unmessageable</h2>
+        <div class="grow">{selectedNode.user.isUnmessagable ? 'Sì' : 'No'}</div>
+      </div>
+    {/if}
+
+    <div class="flex items-center bg-black/20 rounded gap-2 grow">
+      <h2 class="rounded">Prima volta visto</h2>
+      <div class="grow">{formatDateTime(selectedNode?.firstSeen)}</div>
+    </div>
+
+    <div class="flex items-center bg-black/20 rounded gap-2 grow">
+      <h2 class="rounded">Ultima volta visto</h2>
+      <div class="grow">{formatDateTime(selectedNode?.lastHeard)}</div>
+    </div>
+
+    <button
+      class="bg-black/20 rounded p-2 disabled:opacity-50 disabled:cursor-not-allowed"
+      title="Richiedi info utente"
+      disabled={selectedNode?.num == undefined || isUserInfoRequestDisabled(selectedNode.num)}
+      on:click={() => requestNodeUserInfo(selectedNode.num)}
+    >
+      Richiedi info utente
+    </button>
+    {#if selectedNode?.num != undefined && userInfoRequestFeedback(selectedNode.num)}
+      <div class="rounded bg-black/20 p-2">{userInfoRequestFeedback(selectedNode.num)}</div>
+    {/if}
 
     {#if selectedNode?.num == $myNodeNum}
       <div class="flex items-center bg-black/20 rounded gap-2 grow">
