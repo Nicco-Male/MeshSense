@@ -1163,37 +1163,186 @@
       pointer-events: auto;
     }
 
+    .meshsense-trace-popup .leaflet-popup-content-wrapper {
+      max-width: min(420px, 82vw);
+      background: linear-gradient(145deg, #081a10 0%, #0b1f14 100%);
+      border: 1px solid rgba(74, 222, 128, 0.28);
+      border-radius: 16px;
+      color: #f2fff6;
+      box-shadow: 0 16px 42px rgba(0, 0, 0, 0.46), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    }
+
+    .meshsense-trace-popup .leaflet-popup-content {
+      width: min(420px, 82vw) !important;
+      margin: 0;
+      padding: 12px;
+      color: #f2fff6;
+      font-size: 13px;
+      line-height: 1.38;
+    }
+
+    .meshsense-trace-popup .leaflet-popup-tip {
+      background: #0b1f14;
+      border: 1px solid rgba(74, 222, 128, 0.22);
+      box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.28);
+    }
+
+    .meshsense-trace-popup .leaflet-popup-close-button {
+      color: #d9ffe6;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+    }
+
+    .meshsense-trace-popup .leaflet-popup-close-button:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
     .trace-popup {
       min-width: 260px;
-      max-width: min(420px, 74vw);
+      max-width: min(420px, 82vw);
+      color: #f2fff6;
     }
 
-    .trace-popup h3 {
-      margin: 0 0 8px;
-      font-size: 15px;
+    .trace-popup-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 9px;
+      margin-bottom: 9px;
+      border-bottom: 1px solid rgba(183, 205, 188, 0.18);
     }
 
-    .trace-popup-meta,
-    .trace-path {
+    .trace-popup-title {
+      margin: 0;
+      color: #f2fff6;
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.25;
+      letter-spacing: 0.01em;
+    }
+
+    .trace-popup-subtitle {
+      margin-top: 4px;
+      color: #b7cdbc;
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .trace-popup-meta {
       display: grid;
       gap: 6px;
     }
 
-    .trace-node-link {
-      border: 0;
-      border-radius: 999px;
-      background: rgba(103, 232, 154, 0.14);
-      color: #9fffc1;
-      cursor: pointer;
-      font: inherit;
-      padding: 2px 7px;
-      margin: 2px;
-      text-decoration: none;
+    .trace-popup-row {
+      display: grid;
+      grid-template-columns: minmax(92px, 0.44fr) minmax(0, 1fr);
+      align-items: baseline;
+      gap: 10px;
+      color: #f2fff6;
     }
 
-    .trace-node-link:hover {
+    .trace-popup-label {
+      color: #b7cdbc;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .trace-popup-value {
+      min-width: 0;
+      color: #f2fff6;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .trace-popup-quality {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: max-content;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      padding: 3px 9px;
+      color: #f8fff9;
+      font-size: 12px;
+      font-weight: 850;
+      white-space: nowrap;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+    }
+
+    .trace-popup-quality-score {
+      color: rgba(255, 255, 255, 0.82);
+      font-weight: 760;
+    }
+
+    .trace-popup-path-wrap {
+      margin-top: 10px;
+      padding-top: 9px;
+      border-top: 1px solid rgba(183, 205, 188, 0.15);
+    }
+
+    .trace-popup-path-title {
+      margin-bottom: 6px;
+      color: #b7cdbc;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .trace-popup-path,
+    .trace-path {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 5px;
+      max-width: 100%;
+      color: #dffdea;
+    }
+
+    .trace-popup-separator {
+      color: #7aa886;
+      font-weight: 800;
+    }
+
+    .trace-popup-hidden-count {
+      color: #b7cdbc;
+      font-size: 12px;
+    }
+
+    .trace-popup details summary {
+      color: #d7ffe2;
+      cursor: pointer;
+      font-weight: 750;
+    }
+
+    .trace-node-link,
+    .trace-popup-node-link {
+      border: 1px solid rgba(103, 232, 154, 0.28);
+      border-radius: 999px;
+      background: rgba(103, 232, 154, 0.13);
+      color: #eafff0;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.2;
+      padding: 3px 8px;
+      text-decoration: none;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+    }
+
+    .trace-node-link:hover,
+    .trace-node-link:focus-visible,
+    .trace-popup-node-link:hover,
+    .trace-popup-node-link:focus-visible {
       background: rgba(103, 232, 154, 0.28);
-      color: #d8ffe5;
+      border-color: rgba(190, 255, 210, 0.62);
+      color: #ffffff;
+      outline: none;
+      transform: translateY(-1px);
     }
 
     .quality-label {
@@ -1204,11 +1353,11 @@
       font-weight: 750;
     }
 
-    .quality-excellent { color: #67e89a; }
-    .quality-good { color: #a3e635; }
-    .quality-fair { color: #facc15; }
-    .quality-weak { color: #fb7185; }
-    .quality-unknown { color: var(--muted); }
+    .quality-excellent { color: #86efac; background: rgba(34, 197, 94, 0.20); border-color: rgba(134, 239, 172, 0.42); }
+    .quality-good { color: #a7f3d0; background: rgba(20, 184, 166, 0.18); border-color: rgba(125, 211, 252, 0.34); }
+    .quality-fair { color: #fde68a; background: rgba(245, 158, 11, 0.18); border-color: rgba(253, 230, 138, 0.38); }
+    .quality-weak { color: #fecdd3; background: rgba(244, 63, 94, 0.20); border-color: rgba(251, 113, 133, 0.42); }
+    .quality-unknown { color: #d8e3dc; background: rgba(148, 163, 184, 0.16); border-color: rgba(203, 213, 225, 0.28); }
 
     .metric-subgrid {
       display: grid;
@@ -2586,39 +2735,72 @@
     function traceQualityForEdge(edge) {
       rebuildTraceStats();
       const ids = (edge.ids || []).map(canonicalNodeId).filter(Boolean);
-      if (ids.length < 2) return { qualityLabel: "unknown", qualityScore: undefined, countObserved: undefined };
+      if (ids.length < 2) return { qualityLabel: "unknown", qualityScore: undefined, countObserved: undefined, avgSnr: undefined, avgRssi: undefined, successRate: undefined };
       const scores = [];
+      const snrValues = [];
+      const rssiValues = [];
+      const successValues = [];
       let countObserved = 0;
       let lastSeen = edge.lastSeen;
       for (let index = 0; index < ids.length - 1; index += 1) {
         const stat = state.traceLinkStats.get(`${ids[index]}>${ids[index + 1]}`);
         if (!stat) continue;
-        scores.push(stat.qualityScore);
+        if (Number.isFinite(stat.qualityScore)) scores.push(stat.qualityScore);
+        if (Number.isFinite(stat.avgSnr)) snrValues.push(stat.avgSnr);
+        if (Number.isFinite(stat.avgRssi)) rssiValues.push(stat.avgRssi);
+        if (Number.isFinite(stat.successRate)) successValues.push(stat.successRate);
         countObserved += stat.countObserved || 0;
         lastSeen = Math.max(lastSeen || 0, stat.lastSeen || 0);
       }
-      const qualityScore = scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : undefined;
-      return { qualityScore, qualityLabel: statsQualityLabel(qualityScore), countObserved, lastSeen };
+      const average = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
+      const qualityScore = scores.length ? Math.round(average(scores)) : undefined;
+      const avgSnr = snrValues.length ? Number(average(snrValues).toFixed(1)) : undefined;
+      const avgRssi = rssiValues.length ? Number(average(rssiValues).toFixed(1)) : undefined;
+      const successRate = successValues.length ? average(successValues) : undefined;
+      return { qualityScore, qualityLabel: statsQualityLabel(qualityScore), countObserved, lastSeen, avgSnr, avgRssi, successRate };
     }
 
     function linkQualityColor(label) {
       return ({ excellent: "#67e89a", good: "#a3e635", fair: "#facc15", weak: "#fb7185", unknown: "#94a3b8" })[label] || "#94a3b8";
     }
 
+    function qualityDisplayLabel(label) {
+      return ({ excellent: "Excellent", good: "Good", fair: "Fair", weak: "Weak", unknown: "Unknown" })[label] || "Unknown";
+    }
+
+    function formatTraceValue(value, suffix = "") {
+      return value === undefined || value === null || value === "" ? "—" : `${value}${suffix}`;
+    }
+
+    function traceQualityBadgeHtml(label, score) {
+      const clean = ["excellent", "good", "fair", "weak", "unknown"].includes(label) ? label : statsQualityLabel(Number.isFinite(score) ? score : undefined);
+      const display = qualityDisplayLabel(clean);
+      const scoreText = Number.isFinite(score) ? `${score}/100` : "—";
+      return `<span class="trace-popup-quality quality-${clean}"><span>${escapeHtml(display)}</span><span class="trace-popup-quality-score">${escapeHtml(scoreText)}</span></span>`;
+    }
+
+    function tracePopupRowHtml(label, valueHtml) {
+      return `<div class="trace-popup-row"><span class="trace-popup-label">${escapeHtml(label)}</span><span class="trace-popup-value">${valueHtml}</span></div>`;
+    }
+
     function traceNodeButtonHtml(edge, id) {
       const clean = canonicalNodeId(id);
       const node = resolveTraceNode(edge, clean) || findNodeById(clean, null, { requirePosition: false }) || { id: clean };
-      return `<button class="trace-node-link" type="button" data-node-id="${escapeHtml(clean)}">${escapeHtml(displayNodeName(node))}</button>`;
+      return `<button class="trace-node-link trace-popup-node-link" type="button" data-node-id="${escapeHtml(clean)}">${escapeHtml(displayNodeName(node))}</button>`;
+    }
+
+    function tracePathNodesHtml(edge, ids) {
+      return ids.map(id => traceNodeButtonHtml(edge, id)).join('<span class="trace-popup-separator" aria-hidden="true">→</span>');
     }
 
     function tracePathHtml(edge) {
       const ids = (edge.ids || []).filter(isDrawableNodeId);
-      const full = ids.map(id => traceNodeButtonHtml(edge, id)).join(" → ");
-      if (ids.length <= 8) return `<div class="trace-path">${full}</div>`;
+      const full = tracePathNodesHtml(edge, ids);
+      if (ids.length <= 8) return `<div class="trace-popup-path trace-path">${full}</div>`;
       const compact = [...ids.slice(0, 4), ...ids.slice(-3)];
       return `
-        <div class="trace-path">${compact.slice(0, 4).map(id => traceNodeButtonHtml(edge, id)).join(" → ")} → <span class="muted">${ids.length - 7} nodi nascosti</span> → ${compact.slice(4).map(id => traceNodeButtonHtml(edge, id)).join(" → ")}</div>
-        <details class="advanced-details" style="margin-top:8px;"><summary>Mostra percorso completo</summary><div class="trace-path" style="margin-top:8px;">${full}</div></details>
+        <div class="trace-popup-path trace-path">${tracePathNodesHtml(edge, compact.slice(0, 4))}<span class="trace-popup-separator" aria-hidden="true">→</span><span class="trace-popup-hidden-count">${ids.length - 7} nodi nascosti</span><span class="trace-popup-separator" aria-hidden="true">→</span>${tracePathNodesHtml(edge, compact.slice(4))}</div>
+        <details class="advanced-details" style="margin-top:8px;"><summary>Mostra percorso completo</summary><div class="trace-popup-path trace-path" style="margin-top:8px;">${full}</div></details>
       `;
     }
 
@@ -2629,16 +2811,30 @@
       const hop = Math.max(0, (edge.ids || []).filter(isDrawableNodeId).length - 1);
       const quality = traceQualityForEdge(edge);
       const direction = state.selectedNodeId ? traceDirectionForNode(edge) : (edge.direction || "trace");
+      const successRow = Number.isFinite(quality.successRate)
+        ? tracePopupRowHtml("Success rate", `<span class="mono">${Math.round(quality.successRate * 100)}%</span>`)
+        : "";
       return `
         <div class="trace-popup">
-          <h3>${escapeHtml(edge.instanceName || "Istanza")} · ${escapeHtml(direction)}</h3>
+          <div class="trace-popup-header">
+            <div>
+              <h3 class="trace-popup-title">${escapeHtml(displayNodeName(sourceNode))} → ${escapeHtml(displayNodeName(destNode))}</h3>
+              <div class="trace-popup-subtitle">${escapeHtml(edge.instanceName || "Istanza")} · ${escapeHtml(direction)}</div>
+            </div>
+            ${traceQualityBadgeHtml(quality.qualityLabel, quality.qualityScore)}
+          </div>
           <div class="trace-popup-meta">
-            <div><strong>${escapeHtml(displayNodeName(sourceNode))}</strong> → <strong>${escapeHtml(displayNodeName(destNode))}</strong></div>
-            <div><span class="muted">Percorso</span>${tracePathHtml(edge)}</div>
-            <div><span class="muted">Hop</span> <span class="mono">${hop || "—"}${Array.isArray(edge.snr) && edge.snr.length ? `/${edge.snr.length}` : ""}</span></div>
-            <div><span class="muted">Ultimo visto</span> ${formatAge(edge.lastSeen)}</div>
-            <div><span class="muted">Qualità</span> <span class="quality-label quality-${quality.qualityLabel}">${escapeHtml(quality.qualityLabel)}</span>${Number.isFinite(quality.qualityScore) ? ` <span class="mono">${quality.qualityScore}/100</span>` : ""}</div>
-            <div><span class="muted">Osservazioni</span> <span class="mono">${quality.countObserved || "—"}</span></div>
+            ${tracePopupRowHtml("Qualità", `${escapeHtml(qualityDisplayLabel(quality.qualityLabel))} · <span class="mono">${Number.isFinite(quality.qualityScore) ? `${quality.qualityScore}/100` : "—"}</span>`)}
+            ${tracePopupRowHtml("Osservazioni", `<span class="mono">${formatTraceValue(quality.countObserved)}</span>`)}
+            ${tracePopupRowHtml("Ultimo visto", escapeHtml(formatAge(quality.lastSeen || edge.lastSeen)))}
+            ${tracePopupRowHtml("SNR medio", `<span class="mono">${formatTraceValue(quality.avgSnr)}</span>`)}
+            ${tracePopupRowHtml("RSSI medio", `<span class="mono">${formatTraceValue(quality.avgRssi)}</span>`)}
+            ${successRow}
+            ${tracePopupRowHtml("Hop", `<span class="mono">${hop || "—"}${Array.isArray(edge.snr) && edge.snr.length ? `/${edge.snr.length}` : ""}</span>`)}
+          </div>
+          <div class="trace-popup-path-wrap">
+            <div class="trace-popup-path-title">Percorso</div>
+            ${tracePathHtml(edge)}
           </div>
         </div>
       `;
@@ -2647,16 +2843,27 @@
     function linkStatsPopupHtml(stat) {
       const from = findNodeById(stat.fromNodeId, null, { requirePosition: false }) || { id: stat.fromNodeId };
       const to = findNodeById(stat.toNodeId, null, { requirePosition: false }) || { id: stat.toNodeId };
+      const pathEdge = { ids: [stat.fromNodeId, stat.toNodeId] };
       return `
         <div class="trace-popup">
-          <h3>${traceNodeButtonHtml({ ids: [stat.fromNodeId, stat.toNodeId] }, stat.fromNodeId)} → ${traceNodeButtonHtml({ ids: [stat.fromNodeId, stat.toNodeId] }, stat.toNodeId)}</h3>
+          <div class="trace-popup-header">
+            <div>
+              <h3 class="trace-popup-title">${escapeHtml(displayNodeName(from))} → ${escapeHtml(displayNodeName(to))}</h3>
+              <div class="trace-popup-subtitle">Link quality</div>
+            </div>
+            ${traceQualityBadgeHtml(stat.qualityLabel, stat.qualityScore)}
+          </div>
           <div class="trace-popup-meta">
-            <div><span class="muted">Qualità</span> <span class="quality-label quality-${stat.qualityLabel}">${escapeHtml(stat.qualityLabel)}</span> <span class="mono">${stat.qualityScore}/100</span></div>
-            <div><span class="muted">Osservazioni</span> <span class="mono">${stat.countObserved}</span></div>
-            <div><span class="muted">Ultimo visto</span> ${formatAge(stat.lastSeen)}</div>
-            <div><span class="muted">SNR medio</span> <span class="mono">${stat.avgSnr ?? "—"}</span></div>
-            <div><span class="muted">RSSI medio</span> <span class="mono">${stat.avgRssi ?? "—"}</span></div>
-            <div><span class="muted">Success rate</span> <span class="mono">${Number.isFinite(stat.successRate) ? `${Math.round(stat.successRate * 100)}%` : "—"}</span></div>
+            ${tracePopupRowHtml("Qualità", `${escapeHtml(qualityDisplayLabel(stat.qualityLabel))} · <span class="mono">${formatTraceValue(stat.qualityScore, "/100")}</span>`)}
+            ${tracePopupRowHtml("Osservazioni", `<span class="mono">${formatTraceValue(stat.countObserved)}</span>`)}
+            ${tracePopupRowHtml("Ultimo visto", escapeHtml(formatAge(stat.lastSeen)))}
+            ${tracePopupRowHtml("SNR medio", `<span class="mono">${formatTraceValue(stat.avgSnr)}</span>`)}
+            ${tracePopupRowHtml("RSSI medio", `<span class="mono">${formatTraceValue(stat.avgRssi)}</span>`)}
+            ${tracePopupRowHtml("Success rate", `<span class="mono">${Number.isFinite(stat.successRate) ? `${Math.round(stat.successRate * 100)}%` : "—"}</span>`)}
+          </div>
+          <div class="trace-popup-path-wrap">
+            <div class="trace-popup-path-title">Percorso</div>
+            ${tracePathHtml(pathEdge)}
           </div>
         </div>
       `;
@@ -2689,7 +2896,7 @@
     function attachLinePopup(line, htmlFactory) {
       line.off("click");
       line.on("click", (event) => {
-        L.popup({ maxWidth: 460, autoPan: true })
+        L.popup({ className: "meshsense-trace-popup", maxWidth: 420, autoPan: true })
           .setLatLng(event.latlng)
           .setContent(htmlFactory())
           .openOn(state.map);
