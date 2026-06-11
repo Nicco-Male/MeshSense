@@ -126,6 +126,28 @@
     return 'Errore richiesta'
   }
 
+  function userInfoRequestLabel(nodeNum: number) {
+    let current = userInfoRequestState[nodeNum]
+    if (current?.state == 'sent' || current?.state == 'waiting') return '…'
+    if (current?.state == 'received') return '✅'
+    if (current?.state == 'timeout') return '⌛'
+    if (current?.state == 'error' || current?.state == 'rateLimited') return '⚠️'
+    return '👤'
+  }
+
+  function userInfoRequestTitle(nodeNum: number) {
+    let feedback = userInfoRequestFeedback(nodeNum)
+    return feedback ? `Richiedi info utente - ${feedback}` : 'Richiedi info utente'
+  }
+
+  function userInfoRequestClass(nodeNum: number) {
+    let state = userInfoRequestState[nodeNum]?.state
+    if (state == 'sent' || state == 'waiting') return 'animate-pulse opacity-70 border border-cyan-400/70 bg-cyan-600/20'
+    if (state == 'received') return 'border border-emerald-400/70 bg-emerald-600/20'
+    if (state == 'timeout' || state == 'error' || state == 'rateLimited') return 'border border-amber-400/70 bg-amber-600/20'
+    return ''
+  }
+
   function formatDateTime(seconds?: number) {
     if (!seconds) return '—'
     return new Date(seconds * 1000).toLocaleString()
@@ -414,20 +436,9 @@
 
     <div class="flex items-center bg-black/20 rounded gap-2 grow">
       <h2 class="rounded">Ultima volta visto</h2>
-      <div class="grow">{formatDateTime(selectedNode?.lastHeard)}</div>
+      <div class="grow">{formatDateTime(selectedNode?.lastSeen ?? selectedNode?.lastHeard)}</div>
     </div>
 
-    <button
-      class="bg-black/20 rounded p-2 disabled:opacity-50 disabled:cursor-not-allowed"
-      title="Richiedi info utente"
-      disabled={selectedNode?.num == undefined || isUserInfoRequestDisabled(selectedNode.num)}
-      on:click={() => requestNodeUserInfo(selectedNode.num)}
-    >
-      Richiedi info utente
-    </button>
-    {#if selectedNode?.num != undefined && userInfoRequestFeedback(selectedNode.num)}
-      <div class="rounded bg-black/20 p-2">{userInfoRequestFeedback(selectedNode.num)}</div>
-    {/if}
 
     {#if selectedNode?.num == $myNodeNum}
       <div class="flex items-center bg-black/20 rounded gap-2 grow">
@@ -597,6 +608,15 @@
                   disabled={pendingPositionRequests.has(node.num)}
                   on:click={() => requestNodePosition(node.num)}>{positionRequestLabel(node.num)}
                 </button>
+                <button
+                  class="h-7 w-5 rounded disabled:cursor-not-allowed disabled:opacity-50 {userInfoRequestClass(node.num)}"
+                  title={userInfoRequestTitle(node.num)}
+                  disabled={isUserInfoRequestDisabled(node.num)}
+                  on:click={() => requestNodeUserInfo(node.num)}>{userInfoRequestLabel(node.num)}
+                </button>
+                {#if userInfoRequestFeedback(node.num)}
+                  <div title={userInfoRequestFeedback(node.num)} class="max-w-24 truncate rounded bg-black/20 px-1 py-0.5 text-xs">{userInfoRequestFeedback(node.num)}</div>
+                {/if}
               {:else if $hasAccess}
                 <button title="Set Position" class="rounded-md fill-cyan-400/80 text-lg -mx-0.5" on:click={() => ($setPositionMode = true)}
                   ><svg width="24px" height="24px" viewBox="0 0 512 512" data-name="Layer 1" id="Layer_1" xmlns="http://www.w3.org/2000/svg"

@@ -16,11 +16,19 @@ export type NormalizedNode = {
   shortName?: string
   lastHeard?: string | null
   lastHeardSec?: number | null
+  firstSeen?: string | null
+  firstSeenSec?: number | null
+  lastSeen?: string | null
+  lastSeenSec?: number | null
   snr?: number | null
   rssi?: number | null
   latitude?: number
   longitude?: number
   role?: string | number
+  hwModel?: string | number
+  publicKey?: string | Uint8Array | Record<string, number> | number[]
+  isLicensed?: boolean
+  isUnmessagable?: boolean
   user?: { longName?: string; shortName?: string; [key: string]: any }
   position?: any
   trace?: any
@@ -418,6 +426,8 @@ export function normalizeNode(node: Partial<NodeInfo> | any): NormalizedNode {
   let longitude = coordinateIValue(safeNode.position?.longitudeI, safeNode.longitudeI, safeNode.longitude_i, safeNode.user?.longitudeI, safeNode.user?.longitude_i, safeNode.raw?.position?.longitudeI, safeNode.raw?.longitudeI, safeNode.raw?.longitude_i) ??
     coordinateValue(safeNode.longitude, safeNode.lon, safeNode.lng, safeNode.position?.longitude, safeNode.user?.longitude, safeNode.raw?.longitude, safeNode.raw?.lon, safeNode.raw?.lng, safeNode.approximatePosition?.longitude)
   let lastHeardSec = parseTime(safeNode.lastHeard)
+  let firstSeenSec = parseTime(safeNode.firstSeen)
+  let lastSeenSec = parseTime(safeNode.lastSeen ?? safeNode.lastHeard)
 
   return compact({
     num: numeric(safeNode.num),
@@ -426,11 +436,19 @@ export function normalizeNode(node: Partial<NodeInfo> | any): NormalizedNode {
     shortName: safeNode.user?.shortName ?? safeNode.shortName,
     lastHeard: unixSecondsToIso(safeNode.lastHeard),
     lastHeardSec: lastHeardSec ?? null,
+    firstSeen: unixSecondsToIso(safeNode.firstSeen),
+    firstSeenSec: firstSeenSec ?? null,
+    lastSeen: unixSecondsToIso(safeNode.lastSeen ?? safeNode.lastHeard),
+    lastSeenSec: lastSeenSec ?? null,
     snr: numeric(safeNode.snr) ?? null,
     rssi: numeric(safeNode.rssi ?? safeNode.rxRssi) ?? null,
     latitude,
     longitude,
+    hwModel: safeNode.user?.hwModel ?? safeNode.hwModel,
     role: safeNode.user?.role ?? safeNode.role,
+    publicKey: safeNode.user?.publicKey ?? safeNode.publicKey,
+    isLicensed: safeNode.user?.isLicensed ?? safeNode.isLicensed,
+    isUnmessagable: safeNode.user?.isUnmessagable ?? safeNode.isUnmessagable,
     user: safeNode.user,
     position: safeNode.position,
     trace: safeNode.trace,
@@ -538,11 +556,19 @@ function mergeNormalizedNode(previous: NormalizedNode | undefined, next: Normali
     position: next.position ?? previous.position,
     latitude: next.latitude ?? previous.latitude,
     longitude: next.longitude ?? previous.longitude,
+    firstSeen: previous.firstSeen ?? next.firstSeen,
+    firstSeenSec: previous.firstSeenSec ?? next.firstSeenSec ?? null,
     lastHeard: newerLastHeard ? next.lastHeard : previous.lastHeard,
     lastHeardSec: newerLastHeard ? (nextLastHeard ?? null) : (previousLastHeard ?? previous.lastHeardSec ?? null),
+    lastSeen: newerLastHeard ? (next.lastSeen ?? next.lastHeard) : (previous.lastSeen ?? previous.lastHeard),
+    lastSeenSec: newerLastHeard ? (next.lastSeenSec ?? nextLastHeard ?? null) : (previous.lastSeenSec ?? previousLastHeard ?? null),
     rssi: next.rssi ?? previous.rssi ?? null,
     snr: next.snr ?? previous.snr ?? null,
+    hwModel: next.hwModel ?? previous.hwModel,
     role: next.role ?? previous.role,
+    publicKey: next.publicKey ?? previous.publicKey,
+    isLicensed: next.isLicensed ?? previous.isLicensed,
+    isUnmessagable: next.isUnmessagable ?? previous.isUnmessagable,
     trace: next.trace ?? previous.trace,
     source: next.source ?? previous.source
   })
