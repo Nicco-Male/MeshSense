@@ -25,12 +25,13 @@
 </script>
 
 <script lang="ts">
-  import { connectionStatus, myNodeNum, version, type NodeInfo } from 'api/src/vars'
-  import { filteredNodes, isInactive, nodeVisibilityMode } from './Nodes.svelte'
+  import { myNodeNum, nodes, version, type NodeInfo } from 'api/src/vars'
+  import { filteredNodes, nodeVisibilityMode } from './Nodes.svelte'
   import Card from './lib/Card.svelte'
   import OpenLayersMap from './lib/OpenLayersMap.svelte'
-  import { getCoordinates, getNodeById, getNodeName, getNodeNameById, setPosition } from './lib/util'
-  import { showConfigModal, showPage } from './SettingsModal.svelte'
+  import { getCoordinates, getNodeName, getNodeNameById, setPosition } from './lib/util'
+  import { buildTraceroutePolyline } from './lib/traceroute'
+  import { showPage } from './SettingsModal.svelte'
   import { newsVisible } from './News.svelte'
 
   export let ol: OpenLayersMap = undefined
@@ -38,17 +39,20 @@
   $: nodesWithCoords = $filteredNodes.filter((n) => !(n.position?.latitudeI == undefined || n.position?.latitudeI == 0) || n.approximatePosition)
 
   function plotData() {
-    let myNodeCoords = getCoordinates($myNodeNum)
-
     ol.plotLines(
       'routes',
-      nodesWithCoords
-        .filter((n) => n.trace?.route?.length && $nodeVisibilityMode != 'inactive' && !n.trace?.route?.some((routeNodeId) => isInactive(getNodeById(routeNodeId))))
-        .map((n) => {
-          let list: any[] = [...(n.trace?.route?.map((traceNode) => getCoordinates(traceNode)) || []), getCoordinates(n)]
-          if (myNodeCoords[0] && myNodeCoords[1]) list.unshift(myNodeCoords)
-          return list.filter((coords) => !(coords[0] == 0 && coords[1] == 0))
-        })
+      $filteredNodes
+        .filter((n) => n.trace && $nodeVisibilityMode != 'inactive')
+        .map((n) =>
+          buildTraceroutePolyline({
+            nodes: $nodes,
+            source: $myNodeNum,
+            destination: n.num,
+            trace: n.trace,
+            logger: ({ reason, ref, node, route }) => console.debug('[traceroute] skipped route point', { reason, ref, node, route })
+          })
+        )
+        .filter((routePoints): routePoints is number[][] => routePoints?.length >= 2)
     )
 
     ol.plotPoints(
@@ -66,7 +70,7 @@
   }
 
   $: {
-    $myNodeNum, nodesWithCoords
+    $myNodeNum, $nodes, nodesWithCoords
     if (ol) {
       plotData()
     }

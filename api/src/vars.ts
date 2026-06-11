@@ -140,9 +140,9 @@ export type NodeInfo = {
 }
 
 export type TraceRouteData = {
-  route?: number[]
+  route?: (number | string)[]
   snrTowards?: number[]
-  routeBack?: number[]
+  routeBack?: (number | string)[]
   snrBack?: number[]
 }
 
