@@ -457,7 +457,8 @@ export async function connect(address?: string) {
         num: e.from,
         viaMqtt: e.viaMqtt,
         lastHeard: now,
-        firstSeen: nodeFirstSeen(e.from, now)
+        firstSeen: nodeFirstSeen(e.from, now),
+        lastSeen: now
       }
       if (isFiniteChannelIndex(e.channel)) updates.channel = e.channel
 
@@ -508,7 +509,9 @@ export async function connect(address?: string) {
     let e = copy(rawNodeInfo)
     let existingNode = nodes.value.find((n) => e.num == n.num)
     if (isFiniteChannelIndex(e.channel)) rememberObservedChannel(e.num, e.channel)
-    e.firstSeen = existingNode?.firstSeen ?? e.firstSeen ?? e.lastHeard ?? Date.now() / 1000
+    let observedAt = Date.now() / 1000
+    e.firstSeen = existingNode?.firstSeen ?? e.firstSeen ?? e.lastHeard ?? observedAt
+    e.lastSeen = observedAt
     if (e.user) e.userInfoUpdatedAt = Date.now()
     if (existingNode?.lastHeard > e.lastHeard) e.lastHeard = existingNode.lastHeard
     checkForCachedRoute(e as any)
@@ -551,7 +554,17 @@ export async function connect(address?: string) {
     if (id) packet = packets.upsert({ id, data })
     if (from) {
       if (packet) rememberObservedChannel(from, packet.channel)
-      let node = nodes.upsert({ num: from, user: data, firstSeen: nodeFirstSeen(from), userInfoUpdatedAt: Date.now() })
+      let now = Date.now()
+      let nowSeconds = now / 1000
+      let existingNode = nodes.value.find((n) => n.num == from)
+      let node = nodes.upsert({
+        num: from,
+        user: data,
+        firstSeen: nodeFirstSeen(from, nowSeconds),
+        lastHeard: Math.max(existingNode?.lastHeard ?? 0, nowSeconds),
+        lastSeen: nowSeconds,
+        userInfoUpdatedAt: now
+      })
       markUserInfoResponse(from)
       recordNodeUpdate(node)
       if (packet?.viaMqtt === false) sendToMeshMap({ num: from, user: data }, node, packet)
@@ -779,8 +792,8 @@ async function processTraceRoutes() {
 
 function getNodeUserInfoChannel(destination: number) {
   let node = nodes.value.find((n) => n.num == destination)
-  if (isFiniteChannelIndex(node?.channel)) return node.channel
   if (isFiniteChannelIndex(lastObservedNodeChannel[destination])) return lastObservedNodeChannel[destination]
+  if (isFiniteChannelIndex(node?.channel)) return node.channel
   return 0
 }
 

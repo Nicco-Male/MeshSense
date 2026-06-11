@@ -123,6 +123,7 @@ export type NodeInfo = {
   num: number
   snr: number
   lastHeard: number
+  lastSeen?: number
   channel: number
   viaMqtt: boolean
   hopsAway: number
