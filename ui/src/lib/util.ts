@@ -2,6 +2,7 @@ import { accessKey, apiHostname, broadcastId, lastFromRadio, nodes, packets, typ
 import { tick } from 'svelte'
 import { derived, get, writable } from 'svelte/store'
 import { enableAudioAlerts } from '../Settings.svelte'
+import { resolveTracerouteNode } from './traceroute'
 import axios from 'axios'
 
 export let blockUserKey = writable(false)
@@ -69,7 +70,8 @@ export function scrollToBottom(element: HTMLElement, force?, notifyUnseen: (reco
 
 export function getCoordinates(node: NodeInfo | number) {
   if (typeof node == 'number') node = getNodeById(node)
-  if (!node?.position?.longitudeI) return [node?.approximatePosition?.longitude, node?.approximatePosition?.latitude]
+  const approximatePosition = node?.approximatePosition || undefined
+  if (!node?.position?.longitudeI) return [approximatePosition?.longitude, approximatePosition?.latitude]
   return [node?.position?.longitudeI / 10000000, node?.position?.latitudeI / 10000000]
 }
 
@@ -94,8 +96,14 @@ export function getNodeName(node: NodeInfo) {
   return node?.user?.shortName || node?.user?.id || '!' + node?.num?.toString(16)?.padStart(8, '0')
 }
 
-function formatRouteSegment(route: number[] = []) {
-  return route.map((id) => getNodeNameById(id)).join(' -> ')
+function getNodeNameByRef(id: number | string) {
+  if (typeof id == 'number') return getNodeNameById(id)
+  const node = resolveTracerouteNode(id, nodes.value)
+  return node ? getNodeName(node) : id
+}
+
+function formatRouteSegment(route: (number | string)[] = []) {
+  return route.map((id) => getNodeNameByRef(id)).join(' -> ')
 }
 
 export function formatTraceroutePaths(trace: TraceRouteData, sourceId?: number, destinationId?: number) {
@@ -184,7 +192,7 @@ export function testPacket() {
     delayed: 0,
     viaMqtt: false,
     hopStart: 7,
-    publicKey: {},
+    publicKey: '',
     pkiEncrypted: false,
     data: {
       $typeName: 'meshtastic.Telemetry',
@@ -197,7 +205,7 @@ export function testPacket() {
         }
       }
     }
-  })
+  } as any)
 
   nodes.upsert({
     num: 3045257252,
